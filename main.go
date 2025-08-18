@@ -4,13 +4,20 @@ import (
     "database/sql"
     "fmt"
     "log"
+    "os"
     "sync"
     "time"
+    "github.com/joho/godotenv"
     _ "github.com/go-sql-driver/mysql"    // MariaDB/MySQL driver
     _ "github.com/nakagami/firebirdsql"  // Firebird driver
 )
 
 func main() {
+    // Load .env file
+    if err := godotenv.Load(); err != nil {
+        log.Fatal("Error loading .env file:", err)
+    }
+
     // Track counts and start time
     var insertedCount, updatedCount, ignoredCount int
     var mu sync.Mutex // Mutex for thread-safe counter updates
@@ -20,8 +27,16 @@ func main() {
     // Semaphore to limit concurrent goroutines to 20
     semaphore := make(chan struct{}, 20)
 
+    // Construct Firebird connection string
+    firebirdDSN := fmt.Sprintf("%s:%s@%s/%s",
+        os.Getenv("FIREBIRD_USER"),
+        os.Getenv("FIREBIRD_PASSWORD"),
+        os.Getenv("FIREBIRD_HOST"),
+        os.Getenv("FIREBIRD_PATH"),
+    )
+    
     // Connect to Firebird database
-    firebirdConn, err := sql.Open("firebirdsql", "SYSDBA:masterkey@192.168.0.15/C:\\Program Files (x86)\\CompuFour\\Clipp\\Base\\CLIPP.FDB")
+    firebirdConn, err := sql.Open("firebirdsql", firebirdDSN)
     if err != nil {
         log.Fatal("Error connecting to Firebird:", err)
     }
@@ -33,9 +48,17 @@ func main() {
     }
     fmt.Println("Connected to Firebird database")
 
+    // Construct MySQL connection string
+    mysqlDSN := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
+        os.Getenv("MYSQL_USER"),
+        os.Getenv("MYSQL_PASSWORD"),
+        os.Getenv("MYSQL_HOST"),
+        os.Getenv("MYSQL_PORT"),
+        os.Getenv("MYSQL_DATABASE"),
+    )
+    
     // Connect to MySQL database
-    dsn := "sync:MasterKey**@tcp(192.168.0.46:3306)/omni_db?charset=utf8&parseTime=True&loc=Local"
-    mysqlConn, err := sql.Open("mysql", dsn)
+    mysqlConn, err := sql.Open("mysql", mysqlDSN)
     if err != nil {
         log.Fatal("Error connecting to MySQL:", err)
     }
