@@ -20,7 +20,7 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			log.Printf("Error closing Firebird rows: %v", err)
+			log.Printf("error closing Firebird rows: %v", err)
 		}
 	}()
 
@@ -33,7 +33,7 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 		var descricao string
 		var qtdAtual float64
 		if err := rows.Scan(&idEstoque, &descricao, &qtdAtual); err != nil {
-			log.Printf("Error scanning Firebird row: %v", err)
+			log.Printf("error scanning Firebird row: %v", err)
 			continue
 		}
 
@@ -56,42 +56,45 @@ func processRow(mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, idEstoque int
 	defer wg.Done()
 	defer func() { <-semaphore }()
 
-	var count int
-	var existingDescricao string
-	var existingQuantidade float64
+	var existingDescricao sql.NullString
+	var existingQuantidade sql.NullFloat64
 	err := mysqlDB.QueryRow(`
-        SELECT COUNT(*), descricao, quantidade 
+        SELECT descricao, quantidade 
         FROM estoque_produtos 
-        WHERE id_clipp = ?`, idEstoque).Scan(&count, &existingDescricao, &existingQuantidade)
-	if err != nil && err != sql.ErrNoRows {
-		log.Printf("Error checking MySQL record for id_clipp %d: %v", idEstoque, err)
-		return
-	}
-
-	if count > 0 {
-		if existingDescricao == descricao && existingQuantidade == qtdAtual {
+        WHERE id_clipp = ?`, idEstoque).Scan(&existingDescricao, &existingQuantidade)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No record exists, insert new record
+			_, err = insertStmt.Exec(idEstoque, descricao, qtdAtual)
+			if err != nil {
+				log.Printf("error inserting MySQL record for id_clipp %d: %v", idEstoque, err)
+				return
+			}
 			mu.Lock()
-			*ignoredCount++
+			*insertedCount++
 			mu.Unlock()
 			return
 		}
-
-		_, err = updateStmt.Exec(descricao, qtdAtual, idEstoque)
-		if err != nil {
-			log.Printf("Error updating MySQL record for id_clipp %d: %v", idEstoque, err)
-			return
-		}
-		mu.Lock()
-		*updatedCount++
-		mu.Unlock()
-	} else {
-		_, err = insertStmt.Exec(idEstoque, descricao, qtdAtual)
-		if err != nil {
-			log.Printf("Error inserting MySQL record for id_clipp %d: %v", idEstoque, err)
-			return
-		}
-		mu.Lock()
-		*insertedCount++
-		mu.Unlock()
+		log.Printf("error checking MySQL record for id_clipp %d: %v", idEstoque, err)
+		return
 	}
+
+	// Record exists, check if update is needed
+	if existingDescricao.Valid && existingQuantidade.Valid &&
+		existingDescricao.String == descricao && existingQuantidade.Float64 == qtdAtual {
+		mu.Lock()
+		*ignoredCount++
+		mu.Unlock()
+		return
+	}
+
+	// Update existing record
+	_, err = updateStmt.Exec(descricao, qtdAtual, idEstoque)
+	if err != nil {
+		log.Printf("error updating MySQL record for id_clipp %d: %v", idEstoque, err)
+		return
+	}
+	mu.Lock()
+	*updatedCount++
+	mu.Unlock()
 }
