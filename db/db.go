@@ -35,7 +35,7 @@ func ConnectMySQL(cfg config.Config) (*sql.DB, error) {
 		if closeErr := db.Close(); closeErr != nil {
 			log.Printf("error closing MySQL database connection: %v", closeErr)
 		}
-		return nil, fmt.Errorf("MySQL database is offline or inaccessible: %w", err)
+		return nil, fmt.Errorf("mysql database is offline or inaccessible: %w", err)
 	}
 	return db, nil
 }
@@ -62,15 +62,15 @@ func GetSemaphoreSize(db *sql.DB) (semaphoreSize, maxConnections int, err error)
 func PrepareStatements(db *sql.DB) (*sql.Stmt, *sql.Stmt, error) {
 	updateStmt, err := db.Prepare(`
         UPDATE estoque_produtos
-        SET descricao = ?, quantidade = ?
+        SET descricao = ?, quantidade = ?, valor_custo = ?, valor_usd = ?
         WHERE id_clipp = ?
     `)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error preparing MySQL update statement: %w", err)
 	}
 	insertStmt, err := db.Prepare(`
-        INSERT INTO estoque_produtos (id_clipp, descricao, quantidade)
-        VALUES (?, ?, ?)
+        INSERT INTO estoque_produtos (id_clipp, descricao, quantidade, valor_custo, valor_usd)
+        VALUES (?, ?, ?, ?, ?)
     `)
 	if err != nil {
 		if closeErr := updateStmt.Close(); closeErr != nil {

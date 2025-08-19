@@ -3,6 +3,7 @@ package processor
 import (
 	"database/sql"
 	"log"
+	"math"
 	"sync"
 )
 
@@ -40,7 +41,9 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 		var idEstoque int
 		var descricao string
 		var qtdAtual float64
-		if err := rows.Scan(&idEstoque, &descricao, &qtdAtual); err != nil {
+		var prcCusto sql.NullFloat64
+		var prcDolar sql.NullFloat64
+		if err := rows.Scan(&idEstoque, &descricao, &qtdAtual, &prcCusto, &prcDolar); err != nil {
 			log.Printf("error scanning Firebird row: %v", err)
 			continue
 		}
@@ -48,7 +51,7 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 		semaphore <- struct{}{}
 		wg.Add(1)
 
-		go processRow(mysqlDB, updateStmt, insertStmt, idEstoque, descricao, qtdAtual, &mu, &wg, semaphore, insertedCount, updatedCount, ignoredCount)
+		go processRow(mysqlDB, updateStmt, insertStmt, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, &mu, &wg, semaphore, insertedCount, updatedCount, ignoredCount)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -60,20 +63,31 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 }
 
 // processRow processes a single row, updating or inserting into MySQL
-func processRow(mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, idEstoque int, descricao string, qtdAtual float64, mu *sync.Mutex, wg *sync.WaitGroup, semaphore chan struct{}, insertedCount, updatedCount, ignoredCount *int) {
+func processRow(mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, idEstoque int, descricao string, qtdAtual float64, prcCusto, prcDolar sql.NullFloat64, mu *sync.Mutex, wg *sync.WaitGroup, semaphore chan struct{}, insertedCount, updatedCount, ignoredCount *int) {
 	defer wg.Done()
 	defer func() { <-semaphore }()
 
 	var existingDescricao sql.NullString
 	var existingQuantidade sql.NullFloat64
+	var existingValorCusto sql.NullFloat64
+	var existingValorUsd sql.NullFloat64
 	err := mysqlDB.QueryRow(`
-        SELECT descricao, quantidade 
+        SELECT descricao, quantidade, valor_custo, valor_usd 
         FROM estoque_produtos 
-        WHERE id_clipp = ?`, idEstoque).Scan(&existingDescricao, &existingQuantidade)
+        WHERE id_clipp = ?`, idEstoque).Scan(&existingDescricao, &existingQuantidade, &existingValorCusto, &existingValorUsd)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No record exists, insert new record
-			_, err = insertStmt.Exec(idEstoque, descricao, qtdAtual)
+			// Round/truncate to 2 decimal places for MySQL DECIMAL(19,2)
+			custo := 0.0
+			if prcCusto.Valid {
+				custo = math.Round(prcCusto.Float64*100) / 100
+			}
+			dolar := 0.0
+			if prcDolar.Valid {
+				dolar = math.Round(prcDolar.Float64*100) / 100
+			}
+			_, err = insertStmt.Exec(idEstoque, descricao, qtdAtual, custo, dolar)
 			if err != nil {
 				log.Printf("error inserting MySQL record for id_clipp %d: %v", idEstoque, err)
 				return
@@ -88,8 +102,29 @@ func processRow(mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, idEstoque int
 	}
 
 	// Record exists, check if update is needed
+	// Round/truncate existing and new values to 2 decimal places for comparison
+	custo := 0.0
+	if prcCusto.Valid {
+		custo = math.Round(prcCusto.Float64*100) / 100
+	}
+	dolar := 0.0
+	if prcDolar.Valid {
+		dolar = math.Round(prcDolar.Float64*100) / 100
+	}
+	existingCusto := 0.0
+	if existingValorCusto.Valid {
+		existingCusto = math.Round(existingValorCusto.Float64*100) / 100
+	}
+	existingDolar := 0.0
+	if existingValorUsd.Valid {
+		existingDolar = math.Round(existingValorUsd.Float64*100) / 100
+	}
+
 	if existingDescricao.Valid && existingQuantidade.Valid &&
-		existingDescricao.String == descricao && existingQuantidade.Float64 == qtdAtual {
+		existingDescricao.String == descricao &&
+		existingQuantidade.Float64 == qtdAtual &&
+		existingCusto == custo &&
+		existingDolar == dolar {
 		mu.Lock()
 		*ignoredCount++
 		mu.Unlock()
@@ -97,7 +132,7 @@ func processRow(mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, idEstoque int
 	}
 
 	// Update existing record
-	_, err = updateStmt.Exec(descricao, qtdAtual, idEstoque)
+	_, err = updateStmt.Exec(descricao, qtdAtual, custo, dolar, idEstoque)
 	if err != nil {
 		log.Printf("error updating MySQL record for id_clipp %d: %v", idEstoque, err)
 		return
