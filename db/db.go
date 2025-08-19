@@ -18,9 +18,9 @@ func ConnectFirebird(cfg config.Config) (*sql.DB, error) {
 	}
 	if err = db.Ping(); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
-			log.Printf("Error closing Firebird database connection: %v", closeErr)
+			log.Printf("error closing Firebird database connection: %v", closeErr)
 		}
-		return nil, fmt.Errorf("Firebird database is offline or inaccessible: %w", err)
+		return nil, fmt.Errorf("firebird database is offline or inaccessible: %w", err)
 	}
 	return db, nil
 }
@@ -33,7 +33,7 @@ func ConnectMySQL(cfg config.Config) (*sql.DB, error) {
 	}
 	if err = db.Ping(); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
-			log.Printf("Error closing MySQL database connection: %v", closeErr)
+			log.Printf("error closing MySQL database connection: %v", closeErr)
 		}
 		return nil, fmt.Errorf("MySQL database is offline or inaccessible: %w", err)
 	}
@@ -74,7 +74,7 @@ func PrepareStatements(db *sql.DB) (*sql.Stmt, *sql.Stmt, error) {
     `)
 	if err != nil {
 		if closeErr := updateStmt.Close(); closeErr != nil {
-			log.Printf("Error closing MySQL update statement: %v", closeErr)
+			log.Printf("error closing MySQL update statement: %v", closeErr)
 		}
 		return nil, nil, fmt.Errorf("error preparing MySQL insert statement: %w", err)
 	}
