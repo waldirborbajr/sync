@@ -13,6 +13,7 @@ import (
 func main() {
 	// Track counts and start time
 	var insertedCount, updatedCount, ignoredCount int
+	var version = "SynC v0.1.0"
 	startTime := time.Now()
 
 	// Load configuration from .env
@@ -77,6 +78,7 @@ func main() {
 	elapsedTime := time.Since(startTime)
 
 	// Print summary
+	fmt.Printf("%s\n", version)
 	fmt.Printf("Used semaphore size: %d (based on MySQL max_connections: %d)\n", semaphoreSize, maxConnections)
 	fmt.Printf("Total rows inserted: %d\n", insertedCount)
 	fmt.Printf("Total rows updated: %d\n", updatedCount)
