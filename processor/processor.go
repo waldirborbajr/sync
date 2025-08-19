@@ -18,7 +18,11 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Error closing Firebird rows: %v", err)
+		}
+	}()
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup

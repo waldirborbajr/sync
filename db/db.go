@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/nakagami/firebirdsql"
@@ -16,7 +17,9 @@ func ConnectFirebird(cfg config.Config) (*sql.DB, error) {
 		return nil, fmt.Errorf("error connecting to Firebird: %w", err)
 	}
 	if err = db.Ping(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("Error closing Firebird database connection: %v", closeErr)
+		}
 		return nil, fmt.Errorf("failed to ping Firebird database: %w", err)
 	}
 	return db, nil
@@ -29,7 +32,9 @@ func ConnectMySQL(cfg config.Config) (*sql.DB, error) {
 		return nil, fmt.Errorf("error connecting to MySQL: %w", err)
 	}
 	if err = db.Ping(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("Error closing MySQL database connection: %v", closeErr)
+		}
 		return nil, fmt.Errorf("failed to ping MySQL database: %w", err)
 	}
 	return db, nil
@@ -68,7 +73,9 @@ func PrepareStatements(db *sql.DB) (*sql.Stmt, *sql.Stmt, error) {
         VALUES (?, ?, ?)
     `)
 	if err != nil {
-		updateStmt.Close()
+		if closeErr := updateStmt.Close(); closeErr != nil {
+			log.Printf("Error closing MySQL update statement: %v", closeErr)
+		}
 		return nil, nil, fmt.Errorf("error preparing MySQL insert statement: %w", err)
 	}
 	return updateStmt, insertStmt, nil

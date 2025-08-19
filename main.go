@@ -26,7 +26,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Error connecting to Firebird:", err)
 	}
-	defer firebirdConn.Close()
+	defer func() {
+		if err := firebirdConn.Close(); err != nil {
+			log.Printf("Error closing Firebird database connection: %v", err)
+		}
+	}()
 	fmt.Println("Connected to Firebird database")
 
 	// Connect to MySQL database
@@ -34,7 +38,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Error connecting to MySQL:", err)
 	}
-	defer mysqlConn.Close()
+	defer func() {
+		if err := mysqlConn.Close(); err != nil {
+			log.Printf("Error closing MySQL database connection: %v", err)
+		}
+	}()
 	fmt.Println("Connected to MySQL database")
 
 	// Get dynamic semaphore size
@@ -49,8 +57,16 @@ func main() {
 	if err != nil {
 		log.Fatal("Error preparing MySQL statements:", err)
 	}
-	defer updateStmt.Close()
-	defer insertStmt.Close()
+	defer func() {
+		if err := updateStmt.Close(); err != nil {
+			log.Printf("Error closing MySQL update statement: %v", err)
+		}
+	}()
+	defer func() {
+		if err := insertStmt.Close(); err != nil {
+			log.Printf("Error closing MySQL insert statement: %v", err)
+		}
+	}()
 
 	// Process Firebird rows and synchronize with MySQL
 	err = processor.ProcessRows(firebirdConn, mysqlConn, updateStmt, insertStmt, semaphoreSize, &insertedCount, &updatedCount, &ignoredCount)
