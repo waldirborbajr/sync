@@ -14,13 +14,13 @@ import (
 func ConnectFirebird(cfg config.Config) (*sql.DB, error) {
 	db, err := sql.Open("firebirdsql", cfg.GetFirebirdDSN())
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to Firebird: %w", err)
+		return nil, fmt.Errorf("error opening Firebird connection: %w", err)
 	}
 	if err = db.Ping(); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			log.Printf("Error closing Firebird database connection: %v", closeErr)
 		}
-		return nil, fmt.Errorf("failed to ping Firebird database: %w", err)
+		return nil, fmt.Errorf("Firebird database is offline or inaccessible: %w", err)
 	}
 	return db, nil
 }
@@ -29,13 +29,13 @@ func ConnectFirebird(cfg config.Config) (*sql.DB, error) {
 func ConnectMySQL(cfg config.Config) (*sql.DB, error) {
 	db, err := sql.Open("mysql", cfg.GetMySQLDSN())
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to MySQL: %w", err)
+		return nil, fmt.Errorf("error opening MySQL connection: %w", err)
 	}
 	if err = db.Ping(); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			log.Printf("Error closing MySQL database connection: %v", closeErr)
 		}
-		return nil, fmt.Errorf("failed to ping MySQL database: %w", err)
+		return nil, fmt.Errorf("MySQL database is offline or inaccessible: %w", err)
 	}
 	return db, nil
 }

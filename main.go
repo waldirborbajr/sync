@@ -24,7 +24,7 @@ func main() {
 	// Connect to Firebird database
 	firebirdConn, err := db.ConnectFirebird(cfg)
 	if err != nil {
-		log.Fatal("Error connecting to Firebird:", err)
+		log.Fatal(err) // Includes "Firebird database is offline or inaccessible" if applicable
 	}
 	defer func() {
 		if err := firebirdConn.Close(); err != nil {
@@ -36,7 +36,7 @@ func main() {
 	// Connect to MySQL database
 	mysqlConn, err := db.ConnectMySQL(cfg)
 	if err != nil {
-		log.Fatal("Error connecting to MySQL:", err)
+		log.Fatal(err) // Includes "MySQL database is offline or inaccessible" if applicable
 	}
 	defer func() {
 		if err := mysqlConn.Close(); err != nil {
