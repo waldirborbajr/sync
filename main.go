@@ -50,7 +50,6 @@ func main() {
 	if err != nil {
 		log.Printf("Error retrieving MySQL max_connections, using default semaphore size %d: %v", semaphoreSize, err)
 	}
-	fmt.Printf("Using semaphore size: %d (based on MySQL max_connections: %d)\n", semaphoreSize, maxConnections)
 
 	// Prepare MySQL statements
 	updateStmt, insertStmt, err := db.PrepareStatements(mysqlConn)
@@ -78,10 +77,9 @@ func main() {
 	elapsedTime := time.Since(startTime)
 
 	// Print summary
-	fmt.Printf("Data synchronization completed.\n")
-	fmt.Printf("Total de linhas inseridas: %d\n", insertedCount)
-	fmt.Printf("Total de linhas alteradas: %d\n", updatedCount)
-	fmt.Printf("Total de linhas ignoradas: %d\n", ignoredCount)
-	fmt.Printf("Total de semáforos utilizados: %d\n", semaphoreSize)
-	fmt.Printf("Tempo decorrido: %s\n", elapsedTime)
+	fmt.Printf("Used semaphore size: %d (based on MySQL max_connections: %d)\n", semaphoreSize, maxConnections)
+	fmt.Printf("Total rows inserted: %d\n", insertedCount)
+	fmt.Printf("Total rows updated: %d\n", updatedCount)
+	fmt.Printf("Total rows ignored: %d\n", ignoredCount)
+	fmt.Printf("Elapsed time: %s\n", elapsedTime)
 }
