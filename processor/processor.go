@@ -9,10 +9,18 @@ import (
 // ProcessRows queries Firebird and processes rows, updating or inserting into MySQL
 func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, semaphoreSize int, insertedCount, updatedCount, ignoredCount *int) error {
 	query := `
-        SELECT e.ID_ESTOQUE, e.DESCRICAO, p.QTD_ATUAL
-        FROM TB_ESTOQUE e, TB_EST_PRODUTO p
-        WHERE e.ID_ESTOQUE = p.ID_IDENTIFICADOR
-        AND e.status = 'A'
+		SELECT 
+			e.ID_ESTOQUE, 
+			e.DESCRICAO, 
+			p.QTD_ATUAL, 
+			e.PRC_CUSTO, 
+			i.VALOR AS prc_dolar
+		FROM TB_ESTOQUE e
+		JOIN TB_EST_PRODUTO p 
+			ON e.ID_ESTOQUE = p.ID_IDENTIFICADOR
+		LEFT JOIN TB_EST_INDEXADOR i 
+			ON i.ID_ESTOQUE = e.ID_ESTOQUE
+		WHERE e.status = 'A'
     `
 	rows, err := firebirdDB.Query(query)
 	if err != nil {
