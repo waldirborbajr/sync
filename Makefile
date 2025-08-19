@@ -41,14 +41,6 @@ clean:
 	$(GOCLEAN)
 	rm -rf $(BIN_DIR)/*
 
-upload:
-	@echo "Enviando arquivo via SFTP..."
-	@sshpass -p '*senha@' sftp -oBatchMode=no -b - josemario@192.168.0.46 << !
-	cd syn
-	put bin/sync-freebsd
-	bye
-!
-
 # Create bin directory if not exists
 $(shell mkdir -p $(BIN_DIR))
 
