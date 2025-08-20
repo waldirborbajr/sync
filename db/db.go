@@ -48,12 +48,12 @@ func GetSemaphoreSize(db *sql.DB) (semaphoreSize, maxConnections int, err error)
 	if err != nil {
 		return semaphoreSize, 0, fmt.Errorf("error retrieving max_connections: %w", err)
 	}
-	// Use 50% of max_connections, with a minimum of 10 and maximum of 50
-	semaphoreSize = maxConnections / 2
+	// Use 75% de max_connections, com mínimo de 10 e máximo de 100
+	semaphoreSize = int(float64(maxConnections) * 0.75)
 	if semaphoreSize < 10 {
 		semaphoreSize = 10
-	} else if semaphoreSize > 50 {
-		semaphoreSize = 50
+	} else if semaphoreSize > 100 {
+		semaphoreSize = 100
 	}
 	return semaphoreSize, maxConnections, nil
 }

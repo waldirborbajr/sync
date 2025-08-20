@@ -2,26 +2,33 @@ package processor
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"math"
 	"sync"
 )
 
-// ProcessRows queries Firebird and processes rows, updating or inserting into MySQL
+// ProcessRows com pré-carregamento de dados do MySQL
 func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, semaphoreSize int, insertedCount, updatedCount, ignoredCount *int) error {
+	// Pré-carregar dados do MySQL em um mapa
+	existingRecords, err := loadMySQLRecords(mysqlDB)
+	if err != nil {
+		return fmt.Errorf("error loading MySQL records: %w", err)
+	}
+
 	query := `
-		SELECT 
-			e.ID_ESTOQUE, 
-			e.DESCRICAO, 
-			p.QTD_ATUAL, 
-			e.PRC_CUSTO, 
-			i.VALOR AS prc_dolar
-		FROM TB_ESTOQUE e
-		JOIN TB_EST_PRODUTO p 
-			ON e.ID_ESTOQUE = p.ID_IDENTIFICADOR
-		LEFT JOIN TB_EST_INDEXADOR i 
-			ON i.ID_ESTOQUE = e.ID_ESTOQUE
-		WHERE e.status = 'A'
+        SELECT 
+            e.ID_ESTOQUE, 
+            e.DESCRICAO, 
+            p.QTD_ATUAL, 
+            e.PRC_CUSTO, 
+            i.VALOR AS prc_dolar
+        FROM TB_ESTOQUE e
+        JOIN TB_EST_PRODUTO p 
+            ON e.ID_ESTOQUE = p.ID_IDENTIFICADOR
+        LEFT JOIN TB_EST_INDEXADOR i 
+            ON i.ID_ESTOQUE = e.ID_ESTOQUE
+        WHERE e.status = 'A'
     `
 	rows, err := firebirdDB.Query(query)
 	if err != nil {
@@ -36,6 +43,14 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, semaphoreSize)
+	batchSize := 1000
+	var batchInsert []interface{}
+	var batchUpdate []interface{}
+	tx, err := mysqlDB.Begin()
+	if err != nil {
+		return fmt.Errorf("error starting MySQL transaction: %w", err)
+	}
+	rowCount := 0
 
 	for rows.Next() {
 		var idEstoque int
@@ -51,58 +66,109 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 		semaphore <- struct{}{}
 		wg.Add(1)
 
-		go processRow(mysqlDB, updateStmt, insertStmt, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, &mu, &wg, semaphore, insertedCount, updatedCount, ignoredCount)
+		go func(idEstoque int, descricao string, qtdAtual float64, prcCusto, prcDolar sql.NullFloat64) {
+			defer wg.Done()
+			defer func() { <-semaphore }()
+
+			action, params := processRowForBatch(existingRecords, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, &mu, insertedCount, updatedCount, ignoredCount)
+			if action == "insert" {
+				mu.Lock()
+				batchInsert = append(batchInsert, params...)
+				mu.Unlock()
+			} else if action == "update" {
+				mu.Lock()
+				batchUpdate = append(batchUpdate, params...)
+				mu.Unlock()
+			}
+
+			mu.Lock()
+			rowCount++
+			if rowCount%batchSize == 0 {
+				if err := executeBatch(tx, insertStmt, updateStmt, batchInsert, batchUpdate); err != nil {
+					log.Printf("error executing batch: %v", err)
+				}
+				batchInsert = nil
+				batchUpdate = nil
+				if err := tx.Commit(); err != nil {
+					log.Printf("error committing transaction: %v", err)
+				}
+				tx, err = mysqlDB.Begin()
+				if err != nil {
+					log.Printf("error starting new transaction: %v", err)
+				}
+			}
+			mu.Unlock()
+		}(idEstoque, descricao, qtdAtual, prcCusto, prcDolar)
 	}
 
 	if err = rows.Err(); err != nil {
+		tx.Rollback()
 		return err
+	}
+
+	if len(batchInsert) > 0 || len(batchUpdate) > 0 {
+		if err := executeBatch(tx, insertStmt, updateStmt, batchInsert, batchUpdate); err != nil {
+			log.Printf("error executing final batch: %v", err)
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("error committing final transaction: %v", err)
+			return err
+		}
+	} else {
+		tx.Commit()
 	}
 
 	wg.Wait()
 	return nil
 }
 
-// processRow processes a single row, updating or inserting into MySQL
-func processRow(mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, idEstoque int, descricao string, qtdAtual float64, prcCusto, prcDolar sql.NullFloat64, mu *sync.Mutex, wg *sync.WaitGroup, semaphore chan struct{}, insertedCount, updatedCount, ignoredCount *int) {
-	defer wg.Done()
-	defer func() { <-semaphore }()
+// loadMySQLRecords carrega todos os registros existentes do MySQL em um mapa
+type mysqlRecord struct {
+	Descricao  sql.NullString
+	Quantidade sql.NullFloat64
+	ValorCusto sql.NullFloat64
+	ValorUsd   sql.NullFloat64
+}
 
-	var existingDescricao sql.NullString
-	var existingQuantidade sql.NullFloat64
-	var existingValorCusto sql.NullFloat64
-	var existingValorUsd sql.NullFloat64
-	err := mysqlDB.QueryRow(`
-        SELECT descricao, quantidade, valor_custo, valor_usd 
-        FROM estoque_produtos 
-        WHERE id_clipp = ?`, idEstoque).Scan(&existingDescricao, &existingQuantidade, &existingValorCusto, &existingValorUsd)
+func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
+	records := make(map[int]mysqlRecord)
+	rows, err := db.Query("SELECT id_clipp, descricao, quantidade, valor_custo, valor_usd FROM estoque_produtos")
 	if err != nil {
-		if err == sql.ErrNoRows {
-			// No record exists, insert new record
-			// Round/truncate to 2 decimal places for MySQL DECIMAL(19,2)
-			custo := 0.0
-			if prcCusto.Valid {
-				custo = math.Round(prcCusto.Float64*100) / 100
-			}
-			dolar := 0.0
-			if prcDolar.Valid {
-				dolar = math.Round(prcDolar.Float64*100) / 100
-			}
-			_, err = insertStmt.Exec(idEstoque, descricao, qtdAtual, custo, dolar)
-			if err != nil {
-				log.Printf("error inserting MySQL record for id_clipp %d: %v", idEstoque, err)
-				return
-			}
-			mu.Lock()
-			*insertedCount++
-			mu.Unlock()
-			return
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var idClipp int
+		var rec mysqlRecord
+		if err := rows.Scan(&idClipp, &rec.Descricao, &rec.Quantidade, &rec.ValorCusto, &rec.ValorUsd); err != nil {
+			return nil, err
 		}
-		log.Printf("error checking MySQL record for id_clipp %d: %v", idEstoque, err)
-		return
+		records[idClipp] = rec
+	}
+	return records, rows.Err()
+}
+
+// processRowForBatch ajustado para usar o mapa
+func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, descricao string, qtdAtual float64, prcCusto, prcDolar sql.NullFloat64, mu *sync.Mutex, insertedCount, updatedCount, ignoredCount *int) (string, []interface{}) {
+	rec, exists := existingRecords[idEstoque]
+	if !exists {
+		custo := 0.0
+		if prcCusto.Valid {
+			custo = math.Round(prcCusto.Float64*100) / 100
+		}
+		dolar := 0.0
+		if prcDolar.Valid {
+			dolar = math.Round(prcDolar.Float64*100) / 100
+		}
+		mu.Lock()
+		*insertedCount++
+		mu.Unlock()
+		return "insert", []interface{}{idEstoque, descricao, qtdAtual, custo, dolar}
 	}
 
-	// Record exists, check if update is needed
-	// Round/truncate existing and new values to 2 decimal places for comparison
 	custo := 0.0
 	if prcCusto.Valid {
 		custo = math.Round(prcCusto.Float64*100) / 100
@@ -112,32 +178,48 @@ func processRow(mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, idEstoque int
 		dolar = math.Round(prcDolar.Float64*100) / 100
 	}
 	existingCusto := 0.0
-	if existingValorCusto.Valid {
-		existingCusto = math.Round(existingValorCusto.Float64*100) / 100
+	if rec.ValorCusto.Valid {
+		existingCusto = math.Round(rec.ValorCusto.Float64*100) / 100
 	}
 	existingDolar := 0.0
-	if existingValorUsd.Valid {
-		existingDolar = math.Round(existingValorUsd.Float64*100) / 100
+	if rec.ValorUsd.Valid {
+		existingDolar = math.Round(rec.ValorUsd.Float64*100) / 100
 	}
 
-	if existingDescricao.Valid && existingQuantidade.Valid &&
-		existingDescricao.String == descricao &&
-		existingQuantidade.Float64 == qtdAtual &&
+	if rec.Descricao.Valid && rec.Quantidade.Valid &&
+		rec.Descricao.String == descricao &&
+		rec.Quantidade.Float64 == qtdAtual &&
 		existingCusto == custo &&
 		existingDolar == dolar {
 		mu.Lock()
 		*ignoredCount++
 		mu.Unlock()
-		return
+		return "", nil
 	}
 
-	// Update existing record
-	_, err = updateStmt.Exec(descricao, qtdAtual, custo, dolar, idEstoque)
-	if err != nil {
-		log.Printf("error updating MySQL record for id_clipp %d: %v", idEstoque, err)
-		return
-	}
 	mu.Lock()
 	*updatedCount++
 	mu.Unlock()
+	return "update", []interface{}{descricao, qtdAtual, custo, dolar, idEstoque}
+}
+
+// executeBatch executa as operações de INSERT e UPDATE acumuladas
+func executeBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate []interface{}) error {
+	if len(batchInsert) > 0 {
+		for i := 0; i < len(batchInsert); i += 5 {
+			params := batchInsert[i : i+5]
+			if _, err := insertStmt.Exec(params...); err != nil {
+				return fmt.Errorf("error executing batch insert: %w", err)
+			}
+		}
+	}
+	if len(batchUpdate) > 0 {
+		for i := 0; i < len(batchUpdate); i += 5 {
+			params := batchUpdate[i : i+5]
+			if _, err := updateStmt.Exec(params...); err != nil {
+				return fmt.Errorf("error executing batch update: %w", err)
+			}
+		}
+	}
+	return nil
 }
