@@ -10,10 +10,12 @@ import (
 	"github.com/waldirborbajr/sync/processor"
 )
 
+// version is set at build time using -ldflags="-X main.version=VERSION"
+var version string
+
 func main() {
 	// Track counts and start time
 	var insertedCount, updatedCount, ignoredCount int
-	var version = "SynC v0.1.1"
 	startTime := time.Now()
 
 	// Load configuration from .env
