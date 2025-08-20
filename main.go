@@ -13,7 +13,7 @@ import (
 func main() {
 	// Track counts and start time
 	var insertedCount, updatedCount, ignoredCount int
-	var version = "SynC v0.1.0"
+	var version = "SynC v0.1.1"
 	startTime := time.Now()
 
 	// Load configuration from .env
