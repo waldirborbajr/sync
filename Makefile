@@ -1,4 +1,7 @@
 # Makefile for building the Go project for multiple platforms with optimized size and security
+# Version number (update here to change version across all builds)
+VERSION = 0.1.4
+
 # Binary name
 BINARY_NAME = sync
 
@@ -12,8 +15,8 @@ GOCLEAN = $(GOCMD) clean
 GOTEST = $(GOCMD) test
 GOVET = $(GOCMD) vet
 GOLINT = golangci-lint run
-GOFLAGS = -ldflags="-s -w -X main.version=1.0.0" -gcflags="all=-N -l" -trimpath -buildmode=pie
-GOFLAGS_FREEBSD = -ldflags="-s -w -X main.version=1.0.0" -gcflags="all=-N -l" -trimpath
+GOFLAGS = -ldflags="-s -w -X main.version=$(VERSION)" -gcflags="all=-N -l" -trimpath -buildmode=pie
+GOFLAGS_FREEBSD = -ldflags="-s -w -X main.version=$(VERSION)" -gcflags="all=-N -l" -trimpath
 
 # Default target
 all: lint vet test build-all
