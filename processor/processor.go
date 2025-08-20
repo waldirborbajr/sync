@@ -71,17 +71,13 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 			defer func() { <-semaphore }()
 
 			action, params := processRowForBatch(existingRecords, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, &mu, insertedCount, updatedCount, ignoredCount)
-			if action == "insert" {
-				mu.Lock()
-				batchInsert = append(batchInsert, params...)
-				mu.Unlock()
-			} else if action == "update" {
-				mu.Lock()
-				batchUpdate = append(batchUpdate, params...)
-				mu.Unlock()
-			}
-
 			mu.Lock()
+			switch action {
+			case "insert":
+				batchInsert = append(batchInsert, params...)
+			case "update":
+				batchUpdate = append(batchUpdate, params...)
+			}
 			rowCount++
 			if rowCount%batchSize == 0 {
 				if err := executeBatch(tx, insertStmt, updateStmt, batchInsert, batchUpdate); err != nil {
@@ -102,14 +98,18 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 	}
 
 	if err = rows.Err(); err != nil {
-		tx.Rollback()
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			log.Printf("error rolling back transaction: %v", rollbackErr)
+		}
 		return err
 	}
 
 	if len(batchInsert) > 0 || len(batchUpdate) > 0 {
 		if err := executeBatch(tx, insertStmt, updateStmt, batchInsert, batchUpdate); err != nil {
 			log.Printf("error executing final batch: %v", err)
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				log.Printf("error rolling back transaction: %v", rollbackErr)
+			}
 			return err
 		}
 		if err := tx.Commit(); err != nil {
@@ -117,7 +117,10 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 			return err
 		}
 	} else {
-		tx.Commit()
+		if err := tx.Commit(); err != nil {
+			log.Printf("error committing transaction: %v", err)
+			return err
+		}
 	}
 
 	wg.Wait()
@@ -138,7 +141,11 @@ func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("error closing MySQL rows: %v", err)
+		}
+	}()
 
 	for rows.Next() {
 		var idClipp int
