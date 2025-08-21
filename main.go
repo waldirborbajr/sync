@@ -81,7 +81,7 @@ func main() {
 
 	// Print summary
 	fmt.Printf("SynC Firebird x MySQL v%s\n", version)
-	fmt.Printf("Used semaphore size: %d (based on MySQL max_connections: %d)\n", semaphoreSize, maxConnections)
+	fmt.Printf("Used semaphore size: %d/%d\n", semaphoreSize, maxConnections)
 	fmt.Printf("Total rows inserted: %d\n", insertedCount)
 	fmt.Printf("Total rows updated: %d\n", updatedCount)
 	fmt.Printf("Total rows ignored: %d\n", ignoredCount)
