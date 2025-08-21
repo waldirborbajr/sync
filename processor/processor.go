@@ -22,7 +22,7 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
             e.DESCRICAO, 
             p.QTD_ATUAL, 
             e.PRC_CUSTO, 
-            i.VALOR AS prc_dolar
+            i.VALOR AS PRC_DOLAR
         FROM TB_ESTOQUE e
         JOIN TB_EST_PRODUTO p 
             ON e.ID_ESTOQUE = p.ID_IDENTIFICADOR
@@ -137,7 +137,7 @@ type mysqlRecord struct {
 
 func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
 	records := make(map[int]mysqlRecord)
-	rows, err := db.Query("SELECT id_clipp, descricao, quantidade, valor_custo, valor_usd FROM estoque_produtos")
+	rows, err := db.Query("SELECT ID_ESTOQUE, descricao, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE")
 	if err != nil {
 		return nil, err
 	}
