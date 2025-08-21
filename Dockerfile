@@ -10,8 +10,8 @@ RUN go mod download
 # Copy the source code
 COPY . .
 
-# Build the binary with optimized flags for Linux, matching Makefile
-ARG VERSION=0.1.7
+# Build the binary with optimized flags for Linux, using VERSION from build arg
+ARG VERSION
 RUN GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -gcflags="all=-N -l" -trimpath -buildmode=pie -o sync ./main.go
 
 # Stage 2: Create a minimal runtime image
