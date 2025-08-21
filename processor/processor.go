@@ -137,7 +137,7 @@ type mysqlRecord struct {
 
 func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
 	records := make(map[int]mysqlRecord)
-	rows, err := db.Query("SELECT ID_ESTOQUE, descricao, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE")
+	rows, err := db.Query("SELECT ID_ESTOQUE, descricao, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL")
 	if err != nil {
 		return nil, err
 	}
