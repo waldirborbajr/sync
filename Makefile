@@ -44,7 +44,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "${GREEN}%-20s${NC} %s\n", $$1, $$2}'
 
 .PHONY: all
-all: lint vet test build-all ## Run lint, vet, test, and build for all platforms
+all: lint vet test benchmark build-all ## Run lint, vet, test, benchmark, and build for all platforms
 	@echo "${GREEN}All tasks completed successfully!${NC}"
 
 .PHONY: lint
@@ -64,6 +64,12 @@ test: ## Run tests with race detector
 	@echo "${BLUE}Running tests with race detector...${NC}"
 	@$(GOTEST) -v -race $(SRC_DIR)/...
 	@echo "${GREEN}Tests completed successfully!${NC}"
+
+.PHONY: benchmark
+benchmark: check-go ## Run benchmarks for all packages
+	@echo "${BLUE}Running benchmarks...${NC}"
+	@$(GOTEST) -bench=. -benchmem -v $(SRC_DIR)/...
+	@echo "${GREEN}Benchmarks completed successfully!${NC}"
 
 .PHONY: build-all
 build-all: build-linux build-windows build-freebsd ## Build for all supported platforms
@@ -153,8 +159,8 @@ clear-cache-tidy: clear-cache tidy ## Clear Go module cache and run go mod tidy
 	@echo "${GREEN}Cache cleared and go mod tidy completed!${NC}"
 
 .PHONY: verify
-verify: lint vet test ## Run all verification steps (lint, vet, test)
+verify: lint vet test benchmark ## Run all verification steps (lint, vet, test, benchmark)
 	@echo "${GREEN}All verification steps completed successfully!${NC}"
 
 # Ensure dependencies for all targets
-lint vet test build-linux build-windows build-freebsd clear-cache clear-cache-tidy docker-build docker-push: check-go
+lint vet test benchmark build-linux build-windows build-freebsd clear-cache clear-cache-tidy docker-build docker-push: check-go
