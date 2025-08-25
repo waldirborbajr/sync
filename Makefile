@@ -1,6 +1,6 @@
 # Makefile for building the Go project for multiple platforms with optimized size and security
 # Version number (update here to change version across all builds)
-VERSION = 0.1.7
+VERSION = 0.1.8
 
 # Binary name
 BINARY_NAME = sync
