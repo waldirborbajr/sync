@@ -62,14 +62,14 @@ func GetSemaphoreSize(db *sql.DB) (semaphoreSize, maxConnections int, err error)
 func PrepareStatements(db *sql.DB) (*sql.Stmt, *sql.Stmt, error) {
 	updateStmt, err := db.Prepare(`
         UPDATE TB_ESTOQUE
-        SET descricao = ?, QTD_ATUAL = ?, PRC_CUSTO = ?, PRC_DOLAR = ?
+        SET DESCRICAO = ?, QTD_ATUAL = ?, PRC_CUSTO = ?, PRC_DOLAR = ?
         WHERE ID_ESTOQUE = ?
     `)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error preparing MySQL update statement: %w", err)
 	}
 	insertStmt, err := db.Prepare(`
-        INSERT INTO TB_ESTOQUE (ID_ESTOQUE, descricao, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR)
+        INSERT INTO TB_ESTOQUE (ID_ESTOQUE, DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR)
         VALUES (?, ?, ?, ?, ?)
     `)
 	if err != nil {

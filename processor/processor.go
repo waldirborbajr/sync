@@ -28,7 +28,7 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
             ON e.ID_ESTOQUE = p.ID_IDENTIFICADOR
         LEFT JOIN TB_EST_INDEXADOR i 
             ON i.ID_ESTOQUE = e.ID_ESTOQUE
-        WHERE e.status = 'A'
+        WHERE e.STATUS = 'A'
     `
 	rows, err := firebirdDB.Query(query)
 	if err != nil {
@@ -137,7 +137,7 @@ type mysqlRecord struct {
 
 func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
 	records := make(map[int]mysqlRecord)
-	rows, err := db.Query("SELECT ID_ESTOQUE, descricao, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL")
+	rows, err := db.Query("SELECT ID_ESTOQUE, DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL")
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, desc
 		mu.Lock()
 		*insertedCount++
 		mu.Unlock()
-		return "insert", []interface{}{idEstoque, descricao, qtdAtual, custo, dolar}
+		return "insert", []any{idEstoque, descricao, qtdAtual, custo, dolar}
 	}
 
 	custo := 0.0
@@ -207,11 +207,11 @@ func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, desc
 	mu.Lock()
 	*updatedCount++
 	mu.Unlock()
-	return "update", []interface{}{descricao, qtdAtual, custo, dolar, idEstoque}
+	return "update", []any{descricao, qtdAtual, custo, dolar, idEstoque}
 }
 
 // executeBatch executa as operações de INSERT e UPDATE acumuladas
-func executeBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate []interface{}) error {
+func executeBatch(_ *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate []any) error {
 	if len(batchInsert) > 0 {
 		for i := 0; i < len(batchInsert); i += 5 {
 			params := batchInsert[i : i+5]
