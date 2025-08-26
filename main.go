@@ -14,6 +14,8 @@ import (
 var version string
 
 func main() {
+	fmt.Printf("\nSynC Firebird x MySQL v%s\n\n", version)
+
 	// Track counts and start time
 	var insertedCount, updatedCount, ignoredCount int
 	startTime := time.Now()
@@ -80,10 +82,9 @@ func main() {
 	elapsedTime := time.Since(startTime)
 
 	// Print summary
-	fmt.Printf("SynC Firebird x MySQL v%s\n", version)
-	fmt.Printf("Used semaphore size: %d/%d\n", semaphoreSize, maxConnections)
-	fmt.Printf("Total rows inserted: %d\n", insertedCount)
-	fmt.Printf("Total rows updated: %d\n", updatedCount)
-	fmt.Printf("Total rows ignored: %d\n", ignoredCount)
-	fmt.Printf("Elapsed time: %s\n", elapsedTime)
+	fmt.Printf("Used semaphore size: \033[1;32m%d/%d\033[0m\n", semaphoreSize, maxConnections)
+	fmt.Printf("Total rows inserted: \033[1;32m%d\033[0m\n", insertedCount)
+	fmt.Printf("Total rows updated: \033[1;32m%d\033[0m\n", updatedCount)
+	fmt.Printf("Total rows ignored: \033[1;32m%d\033[0m\n", ignoredCount)
+	fmt.Printf("Elapsed time: \033[1;32m%s\033[0m\n", elapsedTime)
 }
