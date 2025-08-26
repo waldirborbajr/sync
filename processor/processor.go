@@ -123,6 +123,14 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 		}
 	}
 
+	// Call stored procedure to update virtual stock
+	// log.Println("Updating virtual stock")
+	_, err = mysqlDB.Exec("CALL UpdateQtdVirtual()")
+	if err != nil {
+		log.Printf("error calling UpdateQtdVirtual procedure: %v", err)
+		return fmt.Errorf("error calling UpdateQtdVirtual procedure: %w", err)
+	}
+
 	wg.Wait()
 	return nil
 }
