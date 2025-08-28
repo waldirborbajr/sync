@@ -40,14 +40,27 @@ func ConnectMySQL(cfg config.Config) (*sql.DB, error) {
 	return db, nil
 }
 
-// GetSemaphoreSize retrieves MySQL max_connections and calculates semaphore size
-func GetSemaphoreSize(db *sql.DB) (semaphoreSize, maxConnections int, err error) {
-	semaphoreSize = 20 // Default fallback
+// GetSemaphoreSize retrieves MySQL max_connections and max_allowed_packet
+func GetSemaphoreSize(db *sql.DB) (semaphoreSize, maxConnections int, maxAllowedPacket int, err error) {
+	semaphoreSize = 20                 // Default fallback
+	maxAllowedPacket = 4 * 1024 * 1024 // Default 4MB
+
+	// Get max_connections
 	var variableName string
 	err = db.QueryRow("SHOW VARIABLES LIKE 'max_connections'").Scan(&variableName, &maxConnections)
 	if err != nil {
-		return semaphoreSize, 0, fmt.Errorf("error retrieving max_connections: %w", err)
+		return semaphoreSize, 0, maxAllowedPacket, fmt.Errorf("error retrieving max_connections: %w", err)
 	}
+
+	// Get max_allowed_packet
+	var packetSize int
+	err = db.QueryRow("SHOW VARIABLES LIKE 'max_allowed_packet'").Scan(&variableName, &packetSize)
+	if err == nil {
+		maxAllowedPacket = packetSize
+	} else {
+		log.Printf("Warning: error retrieving max_allowed_packet: %v", err)
+	}
+
 	// Use 75% de max_connections, com mínimo de 10 e máximo de 100
 	semaphoreSize = int(float64(maxConnections) * 0.75)
 	if semaphoreSize < 10 {
@@ -55,7 +68,8 @@ func GetSemaphoreSize(db *sql.DB) (semaphoreSize, maxConnections int, err error)
 	} else if semaphoreSize > 100 {
 		semaphoreSize = 100
 	}
-	return semaphoreSize, maxConnections, nil
+
+	return semaphoreSize, maxConnections, maxAllowedPacket, nil
 }
 
 // PrepareStatements prepares MySQL update and insert statements

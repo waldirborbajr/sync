@@ -9,7 +9,7 @@ import (
 )
 
 // ProcessRows com pré-carregamento de dados do MySQL
-func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, semaphoreSize int, insertedCount, updatedCount, ignoredCount *int) error {
+func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, semaphoreSize int, maxAllowedPacket int, insertedCount, updatedCount, ignoredCount *int, batchSize *int) error {
 	// Pré-carregar dados do MySQL em um mapa
 	existingRecords, err := loadMySQLRecords(mysqlDB)
 	if err != nil {
@@ -43,7 +43,18 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, semaphoreSize)
-	batchSize := 1000
+
+	// Calcular batch size baseado no max_allowed_packet
+	// Cada registro ocupa aproximadamente 200 bytes (estimativa conservadora)
+	estimatedRowSize := 200
+	*batchSize = maxAllowedPacket / estimatedRowSize
+	if *batchSize > 5000 {
+		*batchSize = 5000 // Limite máximo para evitar memory overflow
+	}
+	if *batchSize < 100 {
+		*batchSize = 100 // Limite mínimo para eficiência
+	}
+
 	var batchInsert []interface{}
 	var batchUpdate []interface{}
 	tx, err := mysqlDB.Begin()
@@ -79,7 +90,7 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 				batchUpdate = append(batchUpdate, params...)
 			}
 			rowCount++
-			if rowCount%batchSize == 0 {
+			if rowCount%*batchSize == 0 {
 				if err := executeBatch(tx, insertStmt, updateStmt, batchInsert, batchUpdate); err != nil {
 					log.Printf("error executing batch: %v", err)
 				}
@@ -124,7 +135,6 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 	}
 
 	// Call stored procedure to update virtual stock
-	// log.Println("Updating virtual stock")
 	_, err = mysqlDB.Exec("CALL UpdateQtdVirtual()")
 	if err != nil {
 		log.Printf("error calling UpdateQtdVirtual procedure: %v", err)
@@ -145,6 +155,13 @@ type mysqlRecord struct {
 
 func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
 	records := make(map[int]mysqlRecord)
+
+	// Pré-alocar mapa com tamanho estimado
+	rowCount := 0
+	if err := db.QueryRow("SELECT COUNT(*) FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL").Scan(&rowCount); err == nil {
+		records = make(map[int]mysqlRecord, rowCount)
+	}
+
 	rows, err := db.Query("SELECT ID_ESTOQUE, DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL")
 	if err != nil {
 		return nil, err
@@ -219,19 +236,23 @@ func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, desc
 }
 
 // executeBatch executa as operações de INSERT e UPDATE acumuladas
-func executeBatch(_ *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate []any) error {
+func executeBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate []any) error {
 	if len(batchInsert) > 0 {
+		// Usar transação para INSERTs em lote
+		stmt := tx.Stmt(insertStmt)
 		for i := 0; i < len(batchInsert); i += 5 {
 			params := batchInsert[i : i+5]
-			if _, err := insertStmt.Exec(params...); err != nil {
+			if _, err := stmt.Exec(params...); err != nil {
 				return fmt.Errorf("error executing batch insert: %w", err)
 			}
 		}
 	}
 	if len(batchUpdate) > 0 {
+		// Usar transação para UPDATEs em lote
+		stmt := tx.Stmt(updateStmt)
 		for i := 0; i < len(batchUpdate); i += 5 {
 			params := batchUpdate[i : i+5]
-			if _, err := updateStmt.Exec(params...); err != nil {
+			if _, err := stmt.Exec(params...); err != nil {
 				return fmt.Errorf("error executing batch update: %w", err)
 			}
 		}
