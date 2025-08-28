@@ -72,19 +72,21 @@ func GetSemaphoreSize(db *sql.DB) (semaphoreSize, maxConnections int, maxAllowed
 	return semaphoreSize, maxConnections, maxAllowedPacket, nil
 }
 
-// PrepareStatements prepares MySQL update and insert statements
+// PrepareStatements prepares MySQL update and insert statements with new fields
 func PrepareStatements(db *sql.DB) (*sql.Stmt, *sql.Stmt, error) {
 	updateStmt, err := db.Prepare(`
         UPDATE TB_ESTOQUE
-        SET DESCRICAO = ?, QTD_ATUAL = ?, PRC_CUSTO = ?, PRC_DOLAR = ?
+        SET DESCRICAO = ?, QTD_ATUAL = ?, PRC_CUSTO = ?, PRC_DOLAR = ?, 
+            PRC_VENDA = ?, PRC_3X = ?, PRC_6X = ?, PRC_10X = ?
         WHERE ID_ESTOQUE = ?
     `)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error preparing MySQL update statement: %w", err)
 	}
 	insertStmt, err := db.Prepare(`
-        INSERT INTO TB_ESTOQUE (ID_ESTOQUE, DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO TB_ESTOQUE (ID_ESTOQUE, DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR, 
+                               PRC_VENDA, PRC_3X, PRC_6X, PRC_10X)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 	if err != nil {
 		if closeErr := updateStmt.Close(); closeErr != nil {

@@ -28,6 +28,13 @@ func main() {
 		log.Fatal("Error loading configuration:", err)
 	}
 
+	// Print pricing configuration
+	fmt.Printf("Pricing Configuration:\n")
+	fmt.Printf("  LUCRO: %.3f%%\n", cfg.Lucro)
+	fmt.Printf("  PARC3X: %.2f%%\n", cfg.Parc3x)
+	fmt.Printf("  PARC6X: %.2f%%\n", cfg.Parc6x)
+	fmt.Printf("  PARC10X: %.2f%%\n\n", cfg.Parc10x)
+
 	// Connect to Firebird database
 	firebirdConn, err := db.ConnectFirebird(cfg)
 	if err != nil {
@@ -87,7 +94,7 @@ func main() {
 	stats := &processor.ProcessingStats{}
 
 	// Process Firebird rows
-	err = processor.ProcessRows(firebirdConn, mysqlConn, updateStmt, insertStmt, semaphoreSize, maxAllowedPacket, &insertedCount, &updatedCount, &ignoredCount, &batchSize, stats)
+	err = processor.ProcessRows(firebirdConn, mysqlConn, updateStmt, insertStmt, semaphoreSize, maxAllowedPacket, &insertedCount, &updatedCount, &ignoredCount, &batchSize, stats, cfg)
 	if err != nil {
 		log.Fatal("Error processing rows:", err)
 	}
@@ -152,29 +159,8 @@ func main() {
 	// Memory usage
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	fmt.Printf("  Memory usage: \033[1;36m%.2f MB\033[0m\n", float64(m.Alloc)/1024/1024)
-	fmt.Printf("  System memory: \033[1;36m%.2f MB\033[0m\n", float64(m.Sys)/1024/1024)
-
-	// GC statistics
-	fmt.Printf("  GC cycles: \033[1;36m%d\033[0m\n", m.NumGC)
-	if m.NumGC > 0 {
-		fmt.Printf("  GC pause: \033[1;36m%.2fms\033[0m\n", float64(m.PauseTotalNs)/float64(m.NumGC)/1000000)
-	}
+	fmt.Printf("  Memory usage: \033[1;36m%.2f MB\033[0m\n", float64(m.Alloc)/(1024*1024))
 
 	fmt.Println(strings.Repeat("=", 80))
-
-	// Performance recommendations
-	fmt.Println("\nPERFORMANCE RECOMMENDATIONS:")
-	if stats.LoadTime > 2*time.Second {
-		fmt.Println("  ⚡ Consider adding indexes to MySQL TB_ESTOQUE table")
-	}
-	if stats.ProcessingTime > 5*time.Second {
-		fmt.Println("  ⚡ Consider increasing MySQL max_connections")
-	}
-	if float64(updatedCount)/float64(totalRows) > 0.7 {
-		fmt.Println("  ⚡ High update rate - consider optimizing comparison logic")
-	}
-	if m.NumGC > 10 {
-		fmt.Println("  ⚡ High GC pressure - consider reducing memory allocation")
-	}
+	fmt.Printf("\nSynchronization completed successfully in %s!\n\n", elapsedTime.Round(time.Millisecond))
 }
