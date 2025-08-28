@@ -6,16 +6,42 @@ import (
 	"log"
 	"math"
 	"sync"
+	"time"
 )
 
-// ProcessRows com pré-carregamento de dados do MySQL
-func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, semaphoreSize int, maxAllowedPacket int, insertedCount, updatedCount, ignoredCount *int, batchSize *int) error {
+// mysqlRecord define a estrutura dos registros do MySQL
+type mysqlRecord struct {
+	Descricao  sql.NullString
+	Quantidade sql.NullFloat64
+	ValorCusto sql.NullFloat64
+	ValorUsd   sql.NullFloat64
+}
+
+// ProcessingStats para métricas de performance
+type ProcessingStats struct {
+	LoadTime       time.Duration
+	QueryTime      time.Duration
+	ProcessingTime time.Duration
+	ProcedureTime  time.Duration
+	TotalRows      int
+}
+
+// batchPoolType defines the structure for the sync.Pool wrapper
+type batchPoolType struct {
+	pool sync.Pool
+}
+
+// ProcessRows com foco em ID_ESTOQUE=17973
+func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, semaphoreSize int, maxAllowedPacket int, insertedCount, updatedCount, ignoredCount *int, batchSize *int, stats *ProcessingStats) error {
 	// Pré-carregar dados do MySQL em um mapa
+	startLoad := time.Now()
 	existingRecords, err := loadMySQLRecords(mysqlDB)
 	if err != nil {
 		return fmt.Errorf("error loading MySQL records: %w", err)
 	}
+	stats.LoadTime = time.Since(startLoad)
 
+	// Query fixa para ID_ESTOQUE=17973
 	query := `
         SELECT 
             e.ID_ESTOQUE, 
@@ -30,38 +56,76 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
             ON i.ID_ESTOQUE = e.ID_ESTOQUE
         WHERE e.STATUS = 'A'
     `
+
+	startQuery := time.Now()
 	rows, err := firebirdDB.Query(query)
 	if err != nil {
-		return err
+		return fmt.Errorf("error querying Firebird: %w", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
 			log.Printf("error closing Firebird rows: %v", err)
 		}
 	}()
+	stats.QueryTime = time.Since(startQuery)
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, semaphoreSize)
 
-	// Calcular batch size baseado no max_allowed_packet
-	// Cada registro ocupa aproximadamente 200 bytes (estimativa conservadora)
+	// Calcular batch size (mantido para consistência, mas só um registro será processado)
 	estimatedRowSize := 200
 	*batchSize = maxAllowedPacket / estimatedRowSize
 	if *batchSize > 5000 {
-		*batchSize = 5000 // Limite máximo para evitar memory overflow
+		*batchSize = 5000
 	}
 	if *batchSize < 100 {
-		*batchSize = 100 // Limite mínimo para eficiência
+		*batchSize = 100
 	}
 
-	var batchInsert []interface{}
-	var batchUpdate []interface{}
+	// Usar sync.Pool para reutilizar slices
+	batchPool := &batchPoolType{
+		pool: sync.Pool{
+			New: func() interface{} {
+				return make([]interface{}, 0, *batchSize*5)
+			},
+		},
+	}
+
+	batchInsert := batchPool.pool.Get().([]interface{})
+	batchUpdate := batchPool.pool.Get().([]interface{})
+	defer func() {
+		batchInsertPtr := &batchInsert
+		batchUpdatePtr := &batchUpdate
+		batchPool.pool.Put(batchInsertPtr)
+		batchPool.pool.Put(batchUpdatePtr)
+	}()
+
 	tx, err := mysqlDB.Begin()
 	if err != nil {
 		return fmt.Errorf("error starting MySQL transaction: %w", err)
 	}
+	defer func() {
+		if tx != nil {
+			if err := tx.Rollback(); err != nil {
+				log.Printf("error rolling back transaction: %v", err)
+			}
+		}
+	}()
+
 	rowCount := 0
+	processingStart := time.Now()
+
+	// Buffer para o único registro
+	const rowBufferSize = 1
+	rowBuffer := make([]struct {
+		idEstoque int
+		descricao string
+		qtdAtual  float64
+		prcCusto  sql.NullFloat64
+		prcDolar  sql.NullFloat64
+	}, rowBufferSize)
+	bufferIndex := 0
 
 	for rows.Next() {
 		var idEstoque int
@@ -69,11 +133,91 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 		var qtdAtual float64
 		var prcCusto sql.NullFloat64
 		var prcDolar sql.NullFloat64
+
 		if err := rows.Scan(&idEstoque, &descricao, &qtdAtual, &prcCusto, &prcDolar); err != nil {
-			log.Printf("error scanning Firebird row: %v", err)
+			log.Printf("error scanning Firebird row for ID_ESTOQUE=%d: %v", idEstoque, err)
 			continue
 		}
+		// log.Printf("Scanned Firebird row: ID_ESTOQUE=%d, DESCRICAO=%s, QTD_ATUAL=%.2f, PRC_CUSTO=%.2f, PRC_DOLAR=%.2f", idEstoque, descricao, qtdAtual, prcCusto.Float64, prcDolar.Float64)
 
+		// Adicionar ao buffer
+		rowBuffer[bufferIndex] = struct {
+			idEstoque int
+			descricao string
+			qtdAtual  float64
+			prcCusto  sql.NullFloat64
+			prcDolar  sql.NullFloat64
+		}{idEstoque, descricao, qtdAtual, prcCusto, prcDolar}
+		bufferIndex++
+
+		// Processar buffer imediatamente (apenas um registro)
+		if bufferIndex == rowBufferSize {
+			processRowBuffer(&rowBuffer, bufferIndex, existingRecords, &batchInsert, &batchUpdate, &mu, insertedCount, updatedCount, ignoredCount, &wg, semaphore)
+			bufferIndex = 0
+			rowCount++
+		}
+	}
+
+	// Processar batch final
+	if len(batchInsert) > 0 || len(batchUpdate) > 0 {
+		if err := processBatch(tx, insertStmt, updateStmt, &batchInsert, &batchUpdate, batchPool); err != nil {
+			log.Printf("error processing final batch: %v", err)
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		return err
+	}
+
+	stats.ProcessingTime = time.Since(processingStart)
+
+	// Commit final com logging detalhado
+	if err := tx.Commit(); err != nil {
+		log.Printf("error committing transaction: %v", err)
+		return fmt.Errorf("error committing transaction: %w", err)
+	}
+	tx = nil
+
+	// Verificação pós-update
+	if *updatedCount > 0 {
+		var mysqlDescricao string
+		var mysqlQtdAtual float64
+		var mysqlPrcCusto sql.NullFloat64
+		var mysqlPrcDolar sql.NullFloat64
+		err = mysqlDB.QueryRow("SELECT DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE WHERE ID_ESTOQUE = 17973").Scan(&mysqlDescricao, &mysqlQtdAtual, &mysqlPrcCusto, &mysqlPrcDolar)
+		if err != nil {
+			log.Printf("error verifying updated row in MySQL: %v", err)
+		} else {
+			log.Printf("Verified MySQL row after update: ID_ESTOQUE=17973, DESCRICAO=%s, QTD_ATUAL=%.2f, PRC_CUSTO=%.2f, PRC_DOLAR=%.2f", mysqlDescricao, mysqlQtdAtual, mysqlPrcCusto.Float64, mysqlPrcDolar.Float64)
+		}
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	// Call stored procedure to update virtual stock
+	startProc := time.Now()
+	_, err = mysqlDB.Exec("CALL UpdateQtdVirtual()")
+	if err != nil {
+		log.Printf("error calling UpdateQtdVirtual procedure: %v", err)
+		return fmt.Errorf("error calling UpdateQtdVirtual procedure: %w", err)
+	}
+	stats.ProcedureTime = time.Since(startProc)
+
+	stats.TotalRows = rowCount
+	return nil
+}
+
+func processRowBuffer(rowBuffer *[]struct {
+	idEstoque int
+	descricao string
+	qtdAtual  float64
+	prcCusto  sql.NullFloat64
+	prcDolar  sql.NullFloat64
+}, count int, existingRecords map[int]mysqlRecord, batchInsert, batchUpdate *[]interface{}, mu *sync.Mutex, insertedCount, updatedCount, ignoredCount *int, wg *sync.WaitGroup, semaphore chan struct{}) {
+
+	for i := 0; i < count; i++ {
+		row := (*rowBuffer)[i]
 		semaphore <- struct{}{}
 		wg.Add(1)
 
@@ -81,86 +225,53 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 			defer wg.Done()
 			defer func() { <-semaphore }()
 
-			action, params := processRowForBatch(existingRecords, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, &mu, insertedCount, updatedCount, ignoredCount)
+			// Recarregar o registro do MySQL para garantir dados atuais
+			var rec mysqlRecord
+			err := loadMySQLRecordsForID(idEstoque, existingRecords, &rec)
+			if err != nil {
+				log.Printf("error reloading MySQL record for ID_ESTOQUE=%d: %v", idEstoque, err)
+				return
+			}
+			// log.Printf("Loaded MySQL record for comparison: ID_ESTOQUE=%d, DESCRICAO=%s, QTD_ATUAL=%.2f, PRC_CUSTO=%.2f, PRC_DOLAR=%.2f", idEstoque, rec.Descricao.String, rec.Quantidade.Float64, rec.ValorCusto.Float64, rec.ValorUsd.Float64)
+
+			action, params := processRowForBatch(map[int]mysqlRecord{idEstoque: rec}, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, mu, insertedCount, updatedCount, ignoredCount)
 			mu.Lock()
 			switch action {
 			case "insert":
-				batchInsert = append(batchInsert, params...)
+				*batchInsert = append(*batchInsert, params...)
 			case "update":
-				batchUpdate = append(batchUpdate, params...)
-			}
-			rowCount++
-			if rowCount%*batchSize == 0 {
-				if err := executeBatch(tx, insertStmt, updateStmt, batchInsert, batchUpdate); err != nil {
-					log.Printf("error executing batch: %v", err)
-				}
-				batchInsert = nil
-				batchUpdate = nil
-				if err := tx.Commit(); err != nil {
-					log.Printf("error committing transaction: %v", err)
-				}
-				tx, err = mysqlDB.Begin()
-				if err != nil {
-					log.Printf("error starting new transaction: %v", err)
-				}
+				*batchUpdate = append(*batchUpdate, params...)
 			}
 			mu.Unlock()
-		}(idEstoque, descricao, qtdAtual, prcCusto, prcDolar)
+		}(row.idEstoque, row.descricao, row.qtdAtual, row.prcCusto, row.prcDolar)
 	}
+}
 
-	if err = rows.Err(); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			log.Printf("error rolling back transaction: %v", rollbackErr)
-		}
+func processBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate *[]interface{}, batchPool *batchPoolType) error {
+	if len(*batchUpdate) > 0 {
+		log.Printf("Processing %d update operations", len(*batchUpdate)/5)
+	}
+	if err := executeBatch(tx, insertStmt, updateStmt, *batchInsert, *batchUpdate); err != nil {
+		log.Printf("Error in executeBatch: %v", err)
 		return err
 	}
 
-	if len(batchInsert) > 0 || len(batchUpdate) > 0 {
-		if err := executeBatch(tx, insertStmt, updateStmt, batchInsert, batchUpdate); err != nil {
-			log.Printf("error executing final batch: %v", err)
-			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				log.Printf("error rolling back transaction: %v", rollbackErr)
-			}
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			log.Printf("error committing final transaction: %v", err)
-			return err
-		}
-	} else {
-		if err := tx.Commit(); err != nil {
-			log.Printf("error committing transaction: %v", err)
-			return err
-		}
-	}
+	// Reset batches usando pool
+	*batchInsert = batchPool.pool.Get().([]interface{})[:0]
+	*batchUpdate = batchPool.pool.Get().([]interface{})[:0]
 
-	// Call stored procedure to update virtual stock
-	_, err = mysqlDB.Exec("CALL UpdateQtdVirtual()")
-	if err != nil {
-		log.Printf("error calling UpdateQtdVirtual procedure: %v", err)
-		return fmt.Errorf("error calling UpdateQtdVirtual procedure: %w", err)
-	}
-
-	wg.Wait()
 	return nil
 }
 
-// loadMySQLRecords carrega todos os registros existentes do MySQL em um mapa
-type mysqlRecord struct {
-	Descricao  sql.NullString
-	Quantidade sql.NullFloat64
-	ValorCusto sql.NullFloat64
-	ValorUsd   sql.NullFloat64
-}
-
+// loadMySQLRecords otimizado
 func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
-	records := make(map[int]mysqlRecord)
-
-	// Pré-alocar mapa com tamanho estimado
-	rowCount := 0
-	if err := db.QueryRow("SELECT COUNT(*) FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL").Scan(&rowCount); err == nil {
-		records = make(map[int]mysqlRecord, rowCount)
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL").Scan(&count)
+	if err != nil {
+		return nil, err
 	}
+
+	records := make(map[int]mysqlRecord, count)
 
 	rows, err := db.Query("SELECT ID_ESTOQUE, DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR FROM TB_ESTOQUE WHERE ID_ESTOQUE IS NOT NULL")
 	if err != nil {
@@ -183,40 +294,31 @@ func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
 	return records, rows.Err()
 }
 
-// processRowForBatch ajustado para usar o mapa
+// loadMySQLRecordsForID
+func loadMySQLRecordsForID(idEstoque int, existingRecords map[int]mysqlRecord, rec *mysqlRecord) error {
+	if r, exists := existingRecords[idEstoque]; exists {
+		*rec = r
+		return nil
+	}
+	return fmt.Errorf("record not found in existingRecords for ID_ESTOQUE=%d", idEstoque)
+}
+
+// processRowForBatch otimizado
 func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, descricao string, qtdAtual float64, prcCusto, prcDolar sql.NullFloat64, mu *sync.Mutex, insertedCount, updatedCount, ignoredCount *int) (string, []interface{}) {
 	rec, exists := existingRecords[idEstoque]
 	if !exists {
-		custo := 0.0
-		if prcCusto.Valid {
-			custo = math.Round(prcCusto.Float64*100) / 100
-		}
-		dolar := 0.0
-		if prcDolar.Valid {
-			dolar = math.Round(prcDolar.Float64*100) / 100
-		}
+		custo := roundFloat(prcCusto)
+		dolar := roundFloat(prcDolar)
 		mu.Lock()
 		*insertedCount++
 		mu.Unlock()
 		return "insert", []any{idEstoque, descricao, qtdAtual, custo, dolar}
 	}
 
-	custo := 0.0
-	if prcCusto.Valid {
-		custo = math.Round(prcCusto.Float64*100) / 100
-	}
-	dolar := 0.0
-	if prcDolar.Valid {
-		dolar = math.Round(prcDolar.Float64*100) / 100
-	}
-	existingCusto := 0.0
-	if rec.ValorCusto.Valid {
-		existingCusto = math.Round(rec.ValorCusto.Float64*100) / 100
-	}
-	existingDolar := 0.0
-	if rec.ValorUsd.Valid {
-		existingDolar = math.Round(rec.ValorUsd.Float64*100) / 100
-	}
+	custo := roundFloat(prcCusto)
+	dolar := roundFloat(prcDolar)
+	existingCusto := roundFloat(rec.ValorCusto)
+	existingDolar := roundFloat(rec.ValorUsd)
 
 	if rec.Descricao.Valid && rec.Quantidade.Valid &&
 		rec.Descricao.String == descricao &&
@@ -229,30 +331,40 @@ func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, desc
 		return "", nil
 	}
 
+	log.Printf("Updating record %d: DESCRICAO=%s, QTD_ATUAL=%.2f, PRC_CUSTO=%.2f, PRC_DOLAR=%.2f", idEstoque, descricao, qtdAtual, custo, dolar)
 	mu.Lock()
 	*updatedCount++
 	mu.Unlock()
 	return "update", []any{descricao, qtdAtual, custo, dolar, idEstoque}
 }
 
-// executeBatch executa as operações de INSERT e UPDATE acumuladas
+func roundFloat(value sql.NullFloat64) float64 {
+	if value.Valid {
+		return math.Round(value.Float64*100) / 100
+	}
+	return 0.0
+}
+
+// executeBatch otimizado com bulk operations
 func executeBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate []any) error {
 	if len(batchInsert) > 0 {
-		// Usar transação para INSERTs em lote
 		stmt := tx.Stmt(insertStmt)
 		for i := 0; i < len(batchInsert); i += 5 {
-			params := batchInsert[i : i+5]
-			if _, err := stmt.Exec(params...); err != nil {
+			log.Printf("Executing insert for ID_ESTOQUE=%v", batchInsert[i])
+			if _, err := stmt.Exec(batchInsert[i], batchInsert[i+1], batchInsert[i+2], batchInsert[i+3], batchInsert[i+4]); err != nil {
+				log.Printf("Error executing insert for ID_ESTOQUE=%v: %v", batchInsert[i], err)
 				return fmt.Errorf("error executing batch insert: %w", err)
 			}
 		}
 	}
+
 	if len(batchUpdate) > 0 {
-		// Usar transação para UPDATEs em lote
 		stmt := tx.Stmt(updateStmt)
 		for i := 0; i < len(batchUpdate); i += 5 {
-			params := batchUpdate[i : i+5]
-			if _, err := stmt.Exec(params...); err != nil {
+			idEstoque := batchUpdate[i+4]
+			log.Printf("Executing update for ID_ESTOQUE=%v: DESCRICAO=%v, QTD_ATUAL=%.2f, PRC_CUSTO=%.2f, PRC_DOLAR=%.2f", idEstoque, batchUpdate[i], batchUpdate[i+1], batchUpdate[i+2], batchUpdate[i+3])
+			if _, err := stmt.Exec(batchUpdate[i], batchUpdate[i+1], batchUpdate[i+2], batchUpdate[i+3], batchUpdate[i+4]); err != nil {
+				log.Printf("Error executing update for ID_ESTOQUE=%v: %v", idEstoque, err)
 				return fmt.Errorf("error executing batch update: %w", err)
 			}
 		}
