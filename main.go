@@ -2,83 +2,93 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/waldirborbajr/sync/config"
 	"github.com/waldirborbajr/sync/db"
+	"github.com/waldirborbajr/sync/logger"
 	"github.com/waldirborbajr/sync/processor"
 )
 
 // version is set at build time using -ldflags="-X main.version=VERSION"
 var version string
 
+// ANSI color codes
+const (
+	redBold   = "\033[1;31m"
+	greenBold = "\033[1;32m"
+	reset     = "\033[0m"
+)
+
 func main() {
+	// Load configuration from .env
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Error loading configuration")
+	}
+
+	// Initialize logger
+	log := logger.InitLogger(cfg.DebugMode)
+
 	fmt.Printf("\nSynC Firebird x MySQL v%s\n\n", version)
 
 	// Track counts and start time
 	var insertedCount, updatedCount, ignoredCount int
 	startTime := time.Now()
 
-	// Load configuration from .env
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		log.Fatal("Error loading configuration:", err)
-	}
-
 	// Connect to Firebird database
 	firebirdConn, err := db.ConnectFirebird(cfg)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err).Msg("Failed to connect to Firebird")
 	}
 	defer func() {
 		if err := firebirdConn.Close(); err != nil {
-			log.Printf("Error closing Firebird database connection: %v", err)
+			log.Error().Err(err).Msg("Error closing Firebird database connection")
 		}
 	}()
 
 	// Connect to MySQL database
 	mysqlConn, err := db.ConnectMySQL(cfg)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err).Msg("Failed to connect to MySQL")
 	}
 	defer func() {
 		if err := mysqlConn.Close(); err != nil {
-			log.Printf("Error closing MySQL database connection: %v", err)
+			log.Error().Err(err).Msg("Error closing MySQL database connection")
 		}
 	}()
 
 	// Otimizações do MySQL
 	_, err = mysqlConn.Exec("SET unique_checks=0")
 	if err != nil {
-		log.Printf("Warning: Could not set unique_checks=0: %v", err)
+		log.Warn().Err(err).Msg("Could not set unique_checks=0")
 	}
 	_, err = mysqlConn.Exec("SET foreign_key_checks=0")
 	if err != nil {
-		log.Printf("Warning: Could not set foreign_key_checks=0: %v", err)
+		log.Warn().Err(err).Msg("Could not set foreign_key_checks=0")
 	}
 
 	// Get dynamic semaphore size and max_allowed_packet
 	semaphoreSize, maxConnections, maxAllowedPacket, err := db.GetSemaphoreSize(mysqlConn)
 	if err != nil {
-		log.Printf("Error retrieving MySQL variables, using defaults: %v", err)
+		log.Warn().Err(err).Msg("Error retrieving MySQL variables, using defaults")
 	}
 
 	// Prepare MySQL statements
 	updateStmt, insertStmt, err := db.PrepareStatements(mysqlConn)
 	if err != nil {
-		log.Fatal("Error preparing MySQL statements:", err)
+		log.Fatal().Err(err).Msg("Error preparing MySQL statements")
 	}
 	defer func() {
 		if err := updateStmt.Close(); err != nil {
-			log.Printf("Error closing MySQL update statement: %v", err)
+			log.Error().Err(err).Msg("Error closing MySQL update statement")
 		}
 	}()
 	defer func() {
 		if err := insertStmt.Close(); err != nil {
-			log.Printf("Error closing MySQL insert statement: %v", err)
+			log.Error().Err(err).Msg("Error closing MySQL insert statement")
 		}
 	}()
 
@@ -87,19 +97,19 @@ func main() {
 	stats := &processor.ProcessingStats{}
 
 	// Process Firebird rows
-	err = processor.ProcessRows(firebirdConn, mysqlConn, updateStmt, insertStmt, semaphoreSize, maxAllowedPacket, &insertedCount, &updatedCount, &ignoredCount, &batchSize, stats)
+	err = processor.ProcessRows(firebirdConn, mysqlConn, updateStmt, insertStmt, semaphoreSize, maxAllowedPacket, &insertedCount, &updatedCount, &ignoredCount, &batchSize, stats, cfg)
 	if err != nil {
-		log.Fatal("Error processing rows:", err)
+		log.Fatal().Err(err).Msg("Error processing rows")
 	}
 
 	// Restaurar configurações do MySQL
 	_, err = mysqlConn.Exec("SET unique_checks=1")
 	if err != nil {
-		log.Printf("Warning: Could not set unique_checks=1: %v", err)
+		log.Warn().Err(err).Msg("Could not set unique_checks=1")
 	}
 	_, err = mysqlConn.Exec("SET foreign_key_checks=1")
 	if err != nil {
-		log.Printf("Warning: Could not set foreign_key_checks=1: %v", err)
+		log.Warn().Err(err).Msg("Could not set foreign_key_checks=1")
 	}
 
 	// Calculate elapsed time and throughput
@@ -164,17 +174,32 @@ func main() {
 	fmt.Println(strings.Repeat("=", 80))
 
 	// Performance recommendations
-	fmt.Println("\nPERFORMANCE RECOMMENDATIONS:")
+	fmt.Println("PERFORMANCE RECOMMENDATIONS:")
+	recommendationCount := 0
+
 	if stats.LoadTime > 2*time.Second {
-		fmt.Println("  ⚡ Consider adding indexes to MySQL TB_ESTOQUE table")
+		fmt.Println(redBold + "  ⚡ Consider adding indexes to MySQL TB_ESTOQUE table" + reset)
+		recommendationCount++
 	}
 	if stats.ProcessingTime > 5*time.Second {
-		fmt.Println("  ⚡ Consider increasing MySQL max_connections")
+		fmt.Println(redBold + "  ⚡ Consider increasing MySQL max_connections" + reset)
+		recommendationCount++
 	}
 	if float64(updatedCount)/float64(totalRows) > 0.7 {
-		fmt.Println("  ⚡ High update rate - consider optimizing comparison logic")
+		fmt.Println(redBold + "  ⚡ High update rate - consider optimizing comparison logic" + reset)
+		recommendationCount++
 	}
 	if m.NumGC > 10 {
-		fmt.Println("  ⚡ High GC pressure - consider reducing memory allocation")
+		fmt.Println(redBold + "  ⚡ High GC pressure - consider reducing memory allocation" + reset)
+		recommendationCount++
 	}
+
+	if recommendationCount == 0 {
+		fmt.Println(greenBold + "  ✅ 0 issues found – running at optimal performance" + reset)
+	} else {
+		fmt.Printf(redBold+"  ❌ %d issues found – please review the recommendations above"+reset+"\n", recommendationCount)
+	}
+
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Printf("Synchronization completed successfully in %s!", elapsedTime.Round(time.Millisecond))
 }

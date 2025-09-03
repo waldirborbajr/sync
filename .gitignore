@@ -33,3 +33,5 @@ go.work.sum
 
 # binary folder
 bin/
+.DS_Store
+sync*.log
