@@ -167,7 +167,7 @@ func main() {
 	fmt.Println(strings.Repeat("=", 80))
 
 	// Performance recommendations
-	fmt.Println("\nPERFORMANCE RECOMMENDATIONS:")
+	fmt.Println("PERFORMANCE RECOMMENDATIONS:")
 	if stats.LoadTime > 2*time.Second {
 		fmt.Println("  ⚡ Consider adding indexes to MySQL TB_ESTOQUE table")
 	}
