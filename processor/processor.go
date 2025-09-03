@@ -365,7 +365,42 @@ func calculatePrices(prcCusto sql.NullFloat64, cfg config.Config) (prcVenda, prc
 func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, descricao string, qtdAtual float64, prcCusto, prcDolar sql.NullFloat64, mu *sync.Mutex, insertedCount, updatedCount, ignoredCount *int, cfg config.Config) (string, []interface{}) {
 	log := logger.GetLogger()
 
+	// Log source (Firebird) row when DEBUG_MODE=true
+	if cfg.DebugMode {
+		log.Debug().
+			Str("source", "Firebird").
+			Int("id_estoque", idEstoque).
+			Str("descricao", descricao).
+			Float64("qtd_atual", qtdAtual).
+			Float64("prc_custo", roundFloat(prcCusto)).
+			Float64("prc_dolar", roundFloat(prcDolar)).
+			Msg("Processing Firebird row")
+	}
+
 	rec, exists := existingRecords[idEstoque]
+
+	// Log target (MySQL) row when DEBUG_MODE=true
+	if cfg.DebugMode {
+		if exists {
+			log.Debug().
+				Str("target", "MySQL").
+				Int("id_estoque", idEstoque).
+				Str("descricao", nullString(rec.Descricao)).
+				Float64("qtd_atual", nullFloat(rec.Quantidade)).
+				Float64("prc_custo", roundFloat(rec.ValorCusto)).
+				Float64("prc_dolar", roundFloat(rec.ValorUsd)).
+				Float64("prc_venda", roundFloat(rec.PrcVenda)).
+				Float64("prc_3x", roundFloat(rec.Prc3x)).
+				Float64("prc_6x", roundFloat(rec.Prc6x)).
+				Float64("prc_10x", roundFloat(rec.Prc10x)).
+				Msg("Comparing against MySQL record")
+		} else {
+			log.Debug().
+				Str("target", "MySQL").
+				Int("id_estoque", idEstoque).
+				Msg("No matching MySQL record found")
+		}
+	}
 
 	// Calcular os novos preços
 	prcVenda, prc3x, prc6x, prc10x := calculatePrices(prcCusto, cfg)
@@ -463,4 +498,19 @@ func executeBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, bat
 		}
 	}
 	return nil
+}
+
+// Helper functions to handle null values in logging
+func nullString(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
+}
+
+func nullFloat(nf sql.NullFloat64) float64 {
+	if nf.Valid {
+		return nf.Float64
+	}
+	return 0.0
 }
