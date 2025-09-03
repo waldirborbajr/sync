@@ -22,7 +22,7 @@ func InitLogger(debug bool) zerolog.Logger {
 		t := time.Now()
 		logFileName := t.Format("sync-20060102150405.log")
 
-		// Configure console output
+		// Configure console output (minimal, no level/message to avoid noise)
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: time.RFC3339,
@@ -47,20 +47,19 @@ func InitLogger(debug bool) zerolog.Logger {
 			return
 		}
 
-		// Set up multi-writer for both console and file
+		// MultiWriter: runtime logs go to both console and file
 		multiWriter := zerolog.MultiLevelWriter(consoleWriter, file)
 
-		// Set log level and additional fields based on debug mode
+		// Configure logger level and fields based on debug mode
 		level := zerolog.InfoLevel
 		var logger zerolog.Logger
 		if debug {
 			level = zerolog.DebugLevel
-			// Add caller and stack trace for detailed troubleshooting
 			logger = zerolog.New(multiWriter).
 				Level(level).
 				With().
 				Timestamp().
-				Caller(). // Include file and line number
+				Caller(). // Include file and line number for debug mode
 				Stack().  // Include stack trace for errors
 				Logger()
 		} else {
@@ -75,10 +74,16 @@ func InitLogger(debug bool) zerolog.Logger {
 
 		// Clean old log files (older than 15 days)
 		cleanOldLogs(15)
+
+		// Log initialization details only to file (not console)
+		fileLogger := zerolog.New(file).
+			Level(level).
+			With().
+			Timestamp().
+			Logger()
+		fileLogger.Info().Bool("debug_mode", debug).Msg("Logger initialized")
 	})
 
-	// Log initialization details
-	instance.Info().Bool("debug_mode", debug).Msg("Logger initialized")
 	return instance
 }
 
