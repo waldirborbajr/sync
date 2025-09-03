@@ -23,6 +23,7 @@ type Config struct {
 	Parc3x           float64
 	Parc6x           float64
 	Parc10x          float64
+	DebugMode        bool // Novo campo para modo debug
 }
 
 // LoadConfig loads environment variables from .env file
@@ -36,6 +37,9 @@ func LoadConfig() (Config, error) {
 	parc3x, _ := strconv.ParseFloat(os.Getenv("PARC3X"), 64)
 	parc6x, _ := strconv.ParseFloat(os.Getenv("PARC6X"), 64)
 	parc10x, _ := strconv.ParseFloat(os.Getenv("PARC10X"), 64)
+
+	// Parse debug mode
+	debugMode, _ := strconv.ParseBool(os.Getenv("DEBUG_MODE"))
 
 	// Set defaults if not provided
 	if lucro == 0 {
@@ -65,6 +69,7 @@ func LoadConfig() (Config, error) {
 		Parc3x:           parc3x,
 		Parc6x:           parc6x,
 		Parc10x:          parc10x,
+		DebugMode:        debugMode,
 	}
 
 	// Validate required fields
