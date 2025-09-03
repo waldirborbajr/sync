@@ -13,11 +13,11 @@ var (
 	instance zerolog.Logger
 )
 
-// InitLogger inicializa o logger com configurações padrão
+// InitLogger initializes the logger with configurations for console and file output
 func InitLogger(debug bool) zerolog.Logger {
 	once.Do(func() {
-		// Configuração de output
-		output := zerolog.ConsoleWriter{
+		// Configure console output
+		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: time.RFC3339,
 			FormatLevel: func(i interface{}) string {
@@ -28,27 +28,57 @@ func InitLogger(debug bool) zerolog.Logger {
 			},
 		}
 
-		// Nível de log baseado no modo debug
-		level := zerolog.InfoLevel
-		if debug {
-			level = zerolog.DebugLevel
+		// Configure file output
+		file, err := os.OpenFile("sync.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			// Fallback to console only if file cannot be opened
+			instance = zerolog.New(consoleWriter).
+				Level(zerolog.InfoLevel).
+				With().
+				Timestamp().
+				Logger()
+			instance.Error().Err(err).Msg("Failed to open sync.log, logging to console only")
+			return
 		}
 
-		instance = zerolog.New(output).
-			Level(level).
-			With().
-			Timestamp().
-			Logger()
+		// Set up multi-writer for both console and file
+		multiWriter := zerolog.MultiLevelWriter(consoleWriter, file)
+
+		// Set log level and additional fields based on debug mode
+		level := zerolog.InfoLevel
+		var logger zerolog.Logger
+		if debug {
+			level = zerolog.DebugLevel
+			// Add caller and stack trace for detailed troubleshooting
+			logger = zerolog.New(multiWriter).
+				Level(level).
+				With().
+				Timestamp().
+				Caller(). // Include file and line number
+				Stack().  // Include stack trace for errors
+				Logger()
+		} else {
+			logger = zerolog.New(multiWriter).
+				Level(level).
+				With().
+				Timestamp().
+				Logger()
+		}
+
+		instance = logger
 	})
+
+	// Log initialization details
+	//instance.Info().Bool("debug_mode", debug).Msg("Logger initialized")
 	return instance
 }
 
-// GetLogger retorna a instância do logger
+// GetLogger returns the logger instance
 func GetLogger() zerolog.Logger {
 	return instance
 }
 
-// Helper functions para logging consistente
+// Helper functions for consistent logging
 func Info() *zerolog.Event {
 	return instance.Info()
 }

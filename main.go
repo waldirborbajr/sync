@@ -31,13 +31,6 @@ func main() {
 	var insertedCount, updatedCount, ignoredCount int
 	startTime := time.Now()
 
-	// Print pricing configuration
-	log.Info().Msg("Pricing Configuration:")
-	log.Info().Msgf("  LUCRO: %.3f%%", cfg.Lucro)
-	log.Info().Msgf("  PARC3X: %.2f%%", cfg.Parc3x)
-	log.Info().Msgf("  PARC6X: %.2f%%", cfg.Parc6x)
-	log.Info().Msgf("  PARC10X: %.2f%%", cfg.Parc10x)
-
 	// Connect to Firebird database
 	firebirdConn, err := db.ConnectFirebird(cfg)
 	if err != nil {
@@ -126,44 +119,68 @@ func main() {
 	}
 
 	// Print detailed summary
-	log.Info().Msg(strings.Repeat("=", 80))
-	log.Info().Msg("SYNCHRONIZATION PERFORMANCE REPORT")
-	log.Info().Msg(strings.Repeat("=", 80))
+	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("SYNCHRONIZATION PERFORMANCE REPORT")
+	fmt.Println(strings.Repeat("=", 80))
 
 	// Database Configuration
-	log.Info().Msg("DATABASE CONFIGURATION:")
-	log.Info().Msgf("  MySQL max_connections: %d", maxConnections)
-	log.Info().Msgf("  MySQL max_allowed_packet: %d MB", maxAllowedPacket/(1024*1024))
-	log.Info().Msgf("  Used semaphore size: %d/%d", semaphoreSize, maxConnections)
-	log.Info().Msgf("  Batch size: %d rows", batchSize)
+	fmt.Println("DATABASE CONFIGURATION:")
+	fmt.Printf("  MySQL max_connections: \033[1;32m%d\033[0m\n", maxConnections)
+	fmt.Printf("  MySQL max_allowed_packet: \033[1;32m%d MB\033[0m\n", maxAllowedPacket/(1024*1024))
+	fmt.Printf("  Used semaphore size: \033[1;32m%d/%d\033[0m\n", semaphoreSize, maxConnections)
+	fmt.Printf("  Batch size: \033[1;32m%d rows\033[0m\n", batchSize)
 
 	// Performance Metrics
-	log.Info().Msg("\nPERFORMANCE METRICS:")
-	log.Info().Msgf("  Data loading time: %s", stats.LoadTime.Round(time.Millisecond))
-	log.Info().Msgf("  Query execution time: %s", stats.QueryTime.Round(time.Millisecond))
-	log.Info().Msgf("  Processing time: %s", stats.ProcessingTime.Round(time.Millisecond))
-	log.Info().Msgf("  Procedure time: %s", stats.ProcedureTime.Round(time.Millisecond))
-	log.Info().Msgf("  Total elapsed time: %s", elapsedTime.Round(time.Millisecond))
+	fmt.Println("\nPERFORMANCE METRICS:")
+	fmt.Printf("  Data loading time: \033[1;36m%s\033[0m\n", stats.LoadTime.Round(time.Millisecond))
+	fmt.Printf("  Query execution time: \033[1;36m%s\033[0m\n", stats.QueryTime.Round(time.Millisecond))
+	fmt.Printf("  Processing time: \033[1;36m%s\033[0m\n", stats.ProcessingTime.Round(time.Millisecond))
+	fmt.Printf("  Procedure time: \033[1;36m%s\033[0m\n", stats.ProcedureTime.Round(time.Millisecond))
+	fmt.Printf("  Total elapsed time: \033[1;36m%s\033[0m\n", elapsedTime.Round(time.Millisecond))
 
 	// Throughput
-	log.Info().Msgf("  Throughput: %.2f rows/second", rowsPerSecond)
-	log.Info().Msgf("  Data rate: %.2f MB/second", mbPerSecond)
+	fmt.Printf("  Throughput: \033[1;35m%.2f rows/second\033[0m\n", rowsPerSecond)
+	fmt.Printf("  Data rate: \033[1;35m%.2f MB/second\033[0m\n", mbPerSecond)
 	if totalRows > 0 {
-		log.Info().Msgf("  Efficiency: %.3f ms/row", (elapsedTime.Seconds()*1000)/float64(totalRows))
+		fmt.Printf("  Efficiency: \033[1;35m%.3f ms/row\033[0m\n", (elapsedTime.Seconds()*1000)/float64(totalRows))
 	}
 
 	// Results
-	log.Info().Msg("\nRESULTS:")
-	log.Info().Msgf("  Total rows processed: %d", totalRows)
-	log.Info().Msgf("  Rows inserted: %d", insertedCount)
-	log.Info().Msgf("  Rows updated: %d", updatedCount)
-	log.Info().Msgf("  Rows ignored: %d", ignoredCount)
+	fmt.Println("\nRESULTS:")
+	fmt.Printf("  Total rows processed: \033[1;32m%d\033[0m\n", totalRows)
+	fmt.Printf("  Rows inserted: \033[1;32m%d\033[0m\n", insertedCount)
+	fmt.Printf("  Rows updated: \033[1;33m%d\033[0m\n", updatedCount)
+	fmt.Printf("  Rows ignored: \033[1;34m%d\033[0m\n", ignoredCount)
 
 	// Memory usage
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	log.Info().Msgf("  Memory usage: %.2f MB", float64(m.Alloc)/(1024*1024))
+	fmt.Printf("  Memory usage: \033[1;36m%.2f MB\033[0m\n", float64(m.Alloc)/1024/1024)
+	fmt.Printf("  System memory: \033[1;36m%.2f MB\033[0m\n", float64(m.Sys)/1024/1024)
 
-	log.Info().Msg(strings.Repeat("=", 80))
-	log.Info().Msgf("Synchronization completed successfully in %s!", elapsedTime.Round(time.Millisecond))
+	// GC statistics
+	fmt.Printf("  GC cycles: \033[1;36m%d\033[0m\n", m.NumGC)
+	if m.NumGC > 0 {
+		fmt.Printf("  GC pause: \033[1;36m%.2fms\033[0m\n", float64(m.PauseTotalNs)/float64(m.NumGC)/1000000)
+	}
+
+	fmt.Println(strings.Repeat("=", 80))
+
+	// Performance recommendations
+	fmt.Println("\nPERFORMANCE RECOMMENDATIONS:")
+	if stats.LoadTime > 2*time.Second {
+		fmt.Println("  ⚡ Consider adding indexes to MySQL TB_ESTOQUE table")
+	}
+	if stats.ProcessingTime > 5*time.Second {
+		fmt.Println("  ⚡ Consider increasing MySQL max_connections")
+	}
+	if float64(updatedCount)/float64(totalRows) > 0.7 {
+		fmt.Println("  ⚡ High update rate - consider optimizing comparison logic")
+	}
+	if m.NumGC > 10 {
+		fmt.Println("  ⚡ High GC pressure - consider reducing memory allocation")
+	}
+
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Printf("Synchronization completed successfully in %s!", elapsedTime.Round(time.Millisecond))
 }

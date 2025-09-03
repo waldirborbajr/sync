@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/joho/godotenv"
+	"github.com/waldirborbajr/sync/logger"
 )
 
 // Config holds database connection parameters and pricing configuration
@@ -28,18 +29,38 @@ type Config struct {
 
 // LoadConfig loads environment variables from .env file
 func LoadConfig() (Config, error) {
+	log := logger.GetLogger()
+
+	// Load .env file
 	if err := godotenv.Load(); err != nil {
+		log.Error().Err(err).Msg("Error loading .env file")
 		return Config{}, fmt.Errorf("error loading .env file: %w", err)
 	}
+	log.Info().Msg(".env file loaded successfully")
 
 	// Parse float values with defaults
-	lucro, _ := strconv.ParseFloat(os.Getenv("LUCRO"), 64)
-	parc3x, _ := strconv.ParseFloat(os.Getenv("PARC3X"), 64)
-	parc6x, _ := strconv.ParseFloat(os.Getenv("PARC6X"), 64)
-	parc10x, _ := strconv.ParseFloat(os.Getenv("PARC10X"), 64)
+	lucro, err := strconv.ParseFloat(os.Getenv("LUCRO"), 64)
+	if err != nil {
+		log.Warn().Err(err).Msg("Invalid LUCRO value, using default")
+	}
+	parc3x, err := strconv.ParseFloat(os.Getenv("PARC3X"), 64)
+	if err != nil {
+		log.Warn().Err(err).Msg("Invalid PARC3X value, using default")
+	}
+	parc6x, err := strconv.ParseFloat(os.Getenv("PARC6X"), 64)
+	if err != nil {
+		log.Warn().Err(err).Msg("Invalid PARC6X value, using default")
+	}
+	parc10x, err := strconv.ParseFloat(os.Getenv("PARC10X"), 64)
+	if err != nil {
+		log.Warn().Err(err).Msg("Invalid PARC10X value, using default")
+	}
 
 	// Parse debug mode
-	debugMode, _ := strconv.ParseBool(os.Getenv("DEBUG_MODE"))
+	debugMode, err := strconv.ParseBool(os.Getenv("DEBUG_MODE"))
+	if err != nil {
+		log.Warn().Err(err).Str("DEBUG_MODE", os.Getenv("DEBUG_MODE")).Msg("Invalid DEBUG_MODE value, defaulting to false")
+	}
 
 	// Set defaults if not provided
 	if lucro == 0 {
@@ -74,11 +95,29 @@ func LoadConfig() (Config, error) {
 
 	// Validate required fields
 	if cfg.FirebirdUser == "" || cfg.FirebirdPassword == "" || cfg.FirebirdHost == "" || cfg.FirebirdPath == "" {
+		log.Error().Msg("Missing required Firebird environment variables")
 		return Config{}, fmt.Errorf("missing required Firebird environment variables")
 	}
 	if cfg.MySQLUser == "" || cfg.MySQLPassword == "" || cfg.MySQLHost == "" || cfg.MySQLPort == "" || cfg.MySQLDatabase == "" {
+		log.Error().Msg("Missing required MySQL environment variables")
 		return Config{}, fmt.Errorf("missing required MySQL environment variables")
 	}
+
+	// Log loaded configuration for troubleshooting
+	log.Debug().
+		Str("FIREBIRD_USER", cfg.FirebirdUser).
+		Str("FIREBIRD_HOST", cfg.FirebirdHost).
+		Str("FIREBIRD_PATH", cfg.FirebirdPath).
+		Str("MYSQL_USER", cfg.MySQLUser).
+		Str("MYSQL_HOST", cfg.MySQLHost).
+		Str("MYSQL_PORT", cfg.MySQLPort).
+		Str("MYSQL_DATABASE", cfg.MySQLDatabase).
+		Float64("LUCRO", cfg.Lucro).
+		Float64("PARC3X", cfg.Parc3x).
+		Float64("PARC6X", cfg.Parc6x).
+		Float64("PARC10X", cfg.Parc10x).
+		Bool("DEBUG_MODE", cfg.DebugMode).
+		Msg("Configuration loaded")
 
 	return cfg, nil
 }

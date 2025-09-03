@@ -51,7 +51,6 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 
 	log.Debug().Msg("MySQL records loaded successfully")
 
-	// Query fixa para ID_ESTOQUE=17973
 	query := `
         SELECT 
             e.ID_ESTOQUE, 
@@ -275,7 +274,7 @@ func processRowBuffer(rowBuffer *[]struct {
 	}
 }
 
-func processBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate *[]interface{}, batchPool *batchPoolType) error {
+func processBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate *[]interface{}, _ *batchPoolType) error {
 	log := logger.GetLogger()
 
 	if len(*batchUpdate) > 0 {
