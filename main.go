@@ -15,6 +15,13 @@ import (
 // version is set at build time using -ldflags="-X main.version=VERSION"
 var version string
 
+// ANSI color codes
+const (
+	redBold   = "\033[1;31m"
+	greenBold = "\033[1;32m"
+	reset     = "\033[0m"
+)
+
 func main() {
 	// Load configuration from .env
 	cfg, err := config.LoadConfig()
@@ -168,17 +175,29 @@ func main() {
 
 	// Performance recommendations
 	fmt.Println("PERFORMANCE RECOMMENDATIONS:")
+	recommendationCount := 0
+
 	if stats.LoadTime > 2*time.Second {
-		fmt.Println("  ⚡ Consider adding indexes to MySQL TB_ESTOQUE table")
+		fmt.Println(redBold + "  ⚡ Consider adding indexes to MySQL TB_ESTOQUE table" + reset)
+		recommendationCount++
 	}
 	if stats.ProcessingTime > 5*time.Second {
-		fmt.Println("  ⚡ Consider increasing MySQL max_connections")
+		fmt.Println(redBold + "  ⚡ Consider increasing MySQL max_connections" + reset)
+		recommendationCount++
 	}
 	if float64(updatedCount)/float64(totalRows) > 0.7 {
-		fmt.Println("  ⚡ High update rate - consider optimizing comparison logic")
+		fmt.Println(redBold + "  ⚡ High update rate - consider optimizing comparison logic" + reset)
+		recommendationCount++
 	}
 	if m.NumGC > 10 {
-		fmt.Println("  ⚡ High GC pressure - consider reducing memory allocation")
+		fmt.Println(redBold + "  ⚡ High GC pressure - consider reducing memory allocation" + reset)
+		recommendationCount++
+	}
+
+	if recommendationCount == 0 {
+		fmt.Println(greenBold + "  ✅ 0 issues found – running at optimal performance" + reset)
+	} else {
+		fmt.Printf(redBold+"  ❌ %d issues found – please review the recommendations above"+reset+"\n", recommendationCount)
 	}
 
 	fmt.Println(strings.Repeat("=", 80))
