@@ -126,9 +126,9 @@ func main() {
 	}
 
 	// Print detailed summary
-	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("\n" + strings.Repeat(".", 20))
 	fmt.Println("SYNCHRONIZATION PERFORMANCE REPORT")
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(strings.Repeat(".", 20))
 
 	// Database Configuration
 	fmt.Println("DATABASE CONFIGURATION:")
@@ -171,7 +171,7 @@ func main() {
 		fmt.Printf("  GC pause: \033[1;36m%.2fms\033[0m\n", float64(m.PauseTotalNs)/float64(m.NumGC)/1000000)
 	}
 
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(strings.Repeat("-", 20))
 
 	// Performance recommendations
 	fmt.Println("PERFORMANCE RECOMMENDATIONS:")
@@ -200,6 +200,6 @@ func main() {
 		fmt.Printf(redBold+"  ❌ %d issues found – please review the recommendations above"+reset+"\n", recommendationCount)
 	}
 
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(strings.Repeat("-", 20))
 	fmt.Printf("Synchronization completed successfully in %s!", elapsedTime.Round(time.Millisecond))
 }
