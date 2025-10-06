@@ -86,13 +86,13 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 
 	// Calcular batch size (mantido para consistência, mas só um registro será processado)
 	estimatedRowSize := 200
-	*batchSize = maxAllowedPacket / estimatedRowSize
-	if *batchSize > 5000 {
-		*batchSize = 5000
-	}
-	if *batchSize < 100 {
-		*batchSize = 100
-	}
+	*batchSize = max(min(maxAllowedPacket/estimatedRowSize, 5000), 100)
+	// if *batchSize > 5000 {
+	// 	*batchSize = 5000
+	// }
+	// if *batchSize < 100 {
+	// 	*batchSize = 100
+	// }
 
 	// Usar sync.Pool para reutilizar slices (agora com ponteiros)
 	batchPool := &batchPoolType{
