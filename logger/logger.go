@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/natefinch/lumberjack.v2"
 	"github.com/rs/zerolog"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -65,42 +65,42 @@ func InitLogger(debug bool) zerolog.Logger {
 		}
 
 		// Configure rotating file output using lumberjack
-	// Allow overrides via environment variables
-	maxSizeMB := 50
-	if s := os.Getenv("LOG_MAX_SIZE_MB"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil && v > 0 {
-			maxSizeMB = v
+		// Allow overrides via environment variables
+		maxSizeMB := 50
+		if s := os.Getenv("LOG_MAX_SIZE_MB"); s != "" {
+			if v, err := strconv.Atoi(s); err == nil && v > 0 {
+				maxSizeMB = v
+			}
 		}
-	}
-	maxBackups := 7
-	if s := os.Getenv("LOG_MAX_BACKUPS"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil && v >= 0 {
-			maxBackups = v
+		maxBackups := 7
+		if s := os.Getenv("LOG_MAX_BACKUPS"); s != "" {
+			if v, err := strconv.Atoi(s); err == nil && v >= 0 {
+				maxBackups = v
+			}
 		}
-	}
-	maxAge := 15
-	if s := os.Getenv("LOG_MAX_AGE_DAYS"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil && v >= 0 {
-			maxAge = v
+		maxAge := 15
+		if s := os.Getenv("LOG_MAX_AGE_DAYS"); s != "" {
+			if v, err := strconv.Atoi(s); err == nil && v >= 0 {
+				maxAge = v
+			}
 		}
-	}
-	compress := true
-	if s := os.Getenv("LOG_COMPRESS"); s != "" {
-		if v, err := strconv.ParseBool(s); err == nil {
-			compress = v
+		compress := true
+		if s := os.Getenv("LOG_COMPRESS"); s != "" {
+			if v, err := strconv.ParseBool(s); err == nil {
+				compress = v
+			}
 		}
-	}
 
-	lumberjackLogger := &lumberjack.Logger{
-		Filename:   logFilePath,
-		MaxSize:    maxSizeMB,
-		MaxBackups: maxBackups,
-		MaxAge:     maxAge,
-		Compress:   compress,
-	}
+		lumberjackLogger := &lumberjack.Logger{
+			Filename:   logFilePath,
+			MaxSize:    maxSizeMB,
+			MaxBackups: maxBackups,
+			MaxAge:     maxAge,
+			Compress:   compress,
+		}
 
-	// MultiWriter: runtime logs go to both console and rotating file
-	multiWriter := zerolog.MultiLevelWriter(consoleWriter, lumberjackLogger)
+		// MultiWriter: runtime logs go to both console and rotating file
+		multiWriter := zerolog.MultiLevelWriter(consoleWriter, lumberjackLogger)
 
 		// Configure logger level and fields based on debug mode
 		level := zerolog.InfoLevel
@@ -130,8 +130,8 @@ func InitLogger(debug bool) zerolog.Logger {
 		// Clean old log files (older than 15 days)
 		cleanOldLogs(logsDir, 15)
 
-		// Log initialization details only to file (not console)
-		fileLogger := zerolog.New(file).
+		// Log initialization details to the rotating file
+		fileLogger := zerolog.New(lumberjackLogger).
 			Level(level).
 			With().
 			Str("app", "sync").
