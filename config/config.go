@@ -25,6 +25,11 @@ type Config struct {
 	Parc6x           float64
 	Parc10x          float64
 	DebugMode        bool // Novo campo para modo debug
+
+	// Update settings
+	UpdateCheckURL     string // Endpoint returning latest version info (JSON: {"version":"v1.2.3","url":"https://..."})
+	AutoUpdate         bool   // If true, will attempt to download the update automatically
+	UpdateDownloadDir  string // Directory to save downloaded update
 }
 
 // LoadConfig loads environment variables from .env file
@@ -62,6 +67,12 @@ func LoadConfig() (Config, error) {
 		log.Warn().Err(err).Str("DEBUG_MODE", os.Getenv("DEBUG_MODE")).Msg("Invalid DEBUG_MODE value, defaulting to false")
 	}
 
+	// Parse update settings
+	autoUpdate, err := strconv.ParseBool(os.Getenv("AUTO_UPDATE"))
+	if err != nil {
+		log.Warn().Err(err).Str("AUTO_UPDATE", os.Getenv("AUTO_UPDATE")).Msg("Invalid AUTO_UPDATE value, defaulting to false")
+	}
+
 	// Set defaults if not provided
 	if lucro == 0 {
 		lucro = 40.00
@@ -74,6 +85,11 @@ func LoadConfig() (Config, error) {
 	}
 	if parc10x == 0 {
 		parc10x = 15.00
+	}
+
+	updateDir := os.Getenv("UPDATE_DOWNLOAD_DIR")
+	if updateDir == "" {
+		updateDir = "."
 	}
 
 	cfg := Config{
@@ -91,6 +107,9 @@ func LoadConfig() (Config, error) {
 		Parc6x:           parc6x,
 		Parc10x:          parc10x,
 		DebugMode:        debugMode,
+		UpdateCheckURL:   os.Getenv("UPDATE_CHECK_URL"),
+		AutoUpdate:       autoUpdate,
+		UpdateDownloadDir: updateDir,
 	}
 
 	// Validate required fields
@@ -117,6 +136,9 @@ func LoadConfig() (Config, error) {
 		Float64("PARC6X", cfg.Parc6x).
 		Float64("PARC10X", cfg.Parc10x).
 		Bool("DEBUG_MODE", cfg.DebugMode).
+		Str("UPDATE_CHECK_URL", cfg.UpdateCheckURL).
+		Bool("AUTO_UPDATE", cfg.AutoUpdate).
+		Str("UPDATE_DOWNLOAD_DIR", cfg.UpdateDownloadDir).
 		Msg("Configuration loaded")
 
 	return cfg, nil

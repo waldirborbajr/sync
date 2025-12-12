@@ -1,12 +1,16 @@
 package logger
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"gopkg.in/natefinch/lumberjack.v2"
 	"github.com/rs/zerolog"
 )
 
@@ -18,67 +22,119 @@ var (
 // InitLogger initializes the logger with configurations for console and file output
 func InitLogger(debug bool) zerolog.Logger {
 	once.Do(func() {
+		// Ensure logs directory exists
+		logsDir := "logs"
+		if err := os.MkdirAll(logsDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create logs dir: %v\n", err)
+			logsDir = "."
+		}
+
 		// Generate timestamped log file name
 		t := time.Now()
 		logFileName := t.Format("sync-20060102150405.log")
+		logFilePath := filepath.Join(logsDir, logFileName)
 
-		// Configure console output (minimal, no level/message to avoid noise)
+		// Configure console output
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: time.RFC3339,
 			FormatLevel: func(i interface{}) string {
-				return ""
+				s := strings.ToUpper(fmt.Sprint(i))
+				s = strings.TrimSpace(s)
+				if s == "" {
+					return s
+				}
+				switch s {
+				case "DEBUG":
+					return "\033[36m[DBG]\033[0m" // cyan
+				case "INFO":
+					return "\033[32m[INF]\033[0m" // green
+				case "WARN":
+					return "\033[33m[WRN]\033[0m" // yellow
+				case "ERROR":
+					return "\033[31m[ERR]\033[0m" // red
+				case "FATAL":
+					return "\033[31m[FAT]\033[0m" // red
+				default:
+					return s
+				}
 			},
 			FormatMessage: func(i interface{}) string {
-				return ""
+				return fmt.Sprint(i)
 			},
 		}
 
-		// Configure file output
-		file, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			// Fallback to console only if file cannot be opened
-			instance = zerolog.New(consoleWriter).
-				Level(zerolog.InfoLevel).
-				With().
-				Timestamp().
-				Logger()
-			instance.Error().Err(err).Str("file", logFileName).Msg("Failed to open log file, logging to console only")
-			return
+		// Configure rotating file output using lumberjack
+	// Allow overrides via environment variables
+	maxSizeMB := 50
+	if s := os.Getenv("LOG_MAX_SIZE_MB"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			maxSizeMB = v
 		}
+	}
+	maxBackups := 7
+	if s := os.Getenv("LOG_MAX_BACKUPS"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v >= 0 {
+			maxBackups = v
+		}
+	}
+	maxAge := 15
+	if s := os.Getenv("LOG_MAX_AGE_DAYS"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v >= 0 {
+			maxAge = v
+		}
+	}
+	compress := true
+	if s := os.Getenv("LOG_COMPRESS"); s != "" {
+		if v, err := strconv.ParseBool(s); err == nil {
+			compress = v
+		}
+	}
 
-		// MultiWriter: runtime logs go to both console and file
-		multiWriter := zerolog.MultiLevelWriter(consoleWriter, file)
+	lumberjackLogger := &lumberjack.Logger{
+		Filename:   logFilePath,
+		MaxSize:    maxSizeMB,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAge,
+		Compress:   compress,
+	}
+
+	// MultiWriter: runtime logs go to both console and rotating file
+	multiWriter := zerolog.MultiLevelWriter(consoleWriter, lumberjackLogger)
 
 		// Configure logger level and fields based on debug mode
 		level := zerolog.InfoLevel
-		var logger zerolog.Logger
 		if debug {
 			level = zerolog.DebugLevel
-			logger = zerolog.New(multiWriter).
-				Level(level).
-				With().
-				Timestamp().
-				Caller(). // Include file and line number for debug mode
-				Stack().  // Include stack trace for errors
-				Logger()
-		} else {
-			logger = zerolog.New(multiWriter).
-				Level(level).
-				With().
-				Timestamp().
-				Logger()
 		}
 
-		instance = logger
+		zerolog.SetGlobalLevel(level)
+		zerolog.TimeFieldFormat = time.RFC3339
+
+		baseLogger := zerolog.New(multiWriter).
+			Level(level).
+			With().
+			Str("app", "sync").
+			Str("goos", runtime.GOOS).
+			Str("goarch", runtime.GOARCH).
+			Timestamp().
+			Logger()
+
+		if debug {
+			// add caller and stack for debug level
+			baseLogger = baseLogger.With().Caller().Logger()
+		}
+
+		instance = baseLogger
 
 		// Clean old log files (older than 15 days)
-		cleanOldLogs(15)
+		cleanOldLogs(logsDir, 15)
 
 		// Log initialization details only to file (not console)
 		fileLogger := zerolog.New(file).
 			Level(level).
 			With().
+			Str("app", "sync").
 			Timestamp().
 			Logger()
 		fileLogger.Info().Bool("debug_mode", debug).Msg("Logger initialized")
@@ -87,11 +143,10 @@ func InitLogger(debug bool) zerolog.Logger {
 	return instance
 }
 
-// cleanOldLogs removes log files older than the specified number of days
-func cleanOldLogs(days int) {
+// cleanOldLogs removes log files older than the specified number of days in a directory
+func cleanOldLogs(dir string, days int) {
 	log := GetLogger() // Safe since instance is set
 
-	dir := "."
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		log.Warn().Err(err).Str("dir", dir).Msg("Failed to read directory for cleaning old logs")
