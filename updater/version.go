@@ -19,10 +19,16 @@ func isNewerVersion(current, remote string) bool {
 	for i := 0; i < 3; i++ {
 		var ci, ri int
 		if i < len(cParts) {
-			fmt.Sscanf(cParts[i], "%d", &ci)
+			_, err := fmt.Sscanf(cParts[i], "%d", &ci)
+			if err != nil {
+				ci = 0
+			}
 		}
 		if i < len(rParts) {
-			fmt.Sscanf(rParts[i], "%d", &ri)
+			_, err := fmt.Sscanf(rParts[i], "%d", &ri)
+			if err != nil {
+				ri = 0
+			}
 		}
 		if ri > ci {
 			return true

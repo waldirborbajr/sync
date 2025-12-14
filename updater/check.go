@@ -58,7 +58,7 @@ func fetchUpdateInfo(ctx context.Context, urlStr string) (UpdateInfo, error) {
 	if err != nil {
 		return UpdateInfo{}, fmt.Errorf("error while checking update: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return UpdateInfo{}, fmt.Errorf("unexpected status code %d", resp.StatusCode)
@@ -104,7 +104,7 @@ func fetchFromGitHubAPI(ctx context.Context, owner, repo string) (UpdateInfo, er
 	if err != nil {
 		return UpdateInfo{}, fmt.Errorf("error while calling GitHub API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return UpdateInfo{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
@@ -112,8 +112,8 @@ func fetchFromGitHubAPI(ctx context.Context, owner, repo string) (UpdateInfo, er
 
 	// Minimal struct to decode fields we need
 	var gh struct {
-		TagName   string `json:"tag_name"`
-		Assets    []struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
 			BrowserDownloadURL string `json:"browser_download_url"`
 			Name               string `json:"name"`
 		} `json:"assets"`
