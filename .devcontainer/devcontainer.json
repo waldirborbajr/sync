@@ -1,0 +1,14 @@
+{
+  "name": "Go Development",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.Go"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}
