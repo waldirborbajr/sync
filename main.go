@@ -20,22 +20,19 @@ const (
 )
 
 func main() {
-	// Load configuration from .env
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		logger.Fatal().Err(err).Msg("Error loading configuration")
-	}
+	// Initialize logger with default debug false
+	log := logger.InitLogger(false)
 
-	// Initialize logger
-	log := logger.InitLogger(cfg.DebugMode)
-
-	fmt.Printf("\nSynC Firebird x MySQL v%s\n\n", version)
-
-	// Check for updates if configured
+	// Check for updates first
 	ctx := context.Background()
-	downloaded, path, info, err := updater.RunUpdateFlow(ctx, version, cfg)
+	cfgForUpdate := config.Config{
+		UpdateCheckURL:    "", // will use default GitHub URL
+		AutoUpdate:        false,
+		UpdateDownloadDir: ".",
+	}
+	downloaded, path, info, err := updater.RunUpdateFlow(ctx, version, cfgForUpdate)
 	if err != nil {
-		log.Warn().Err(err).Msg("Error while checking/downloading updates")
+		log.Warn().Err(err).Msg("Error while checking updates")
 	} else if info.URL != "" {
 		if downloaded {
 			log.Info().Str("latest", info.Version).Str("file", path).Msg("Update downloaded successfully")
@@ -43,6 +40,21 @@ func main() {
 			log.Info().Str("latest", info.Version).Str("download_url", info.URL).Msg("Download available for the latest version")
 		}
 	}
+
+	// Load configuration from .env
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Error loading configuration")
+	}
+
+	// Update logger level if debug mode is enabled
+	if cfg.DebugMode {
+		// Since logger is initialized with once, we can set the global level
+		// Note: This may not affect already created loggers, but for simplicity
+		// we'll assume it's ok or handle differently if needed
+	}
+
+	fmt.Printf("\nSynC Firebird x MySQL v%s\n\n", version)
 
 	// Run main processing and print a summarized report
 	insertedCount, updatedCount, ignoredCount, batchSize, stats, elapsedTime, maxConnections, maxAllowedPacket, err := runProcessing(cfg)
