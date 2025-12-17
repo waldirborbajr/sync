@@ -187,58 +187,21 @@ func ProcessRows(firebirdDB, mysqlDB *sql.DB, updateStmt, insertStmt *sql.Stmt, 
 	stats.ProcessingTime = time.Since(processingStart)
 
 	// Commit final com logging detalhado
-	if err := tx.Commit(); err != nil {
-		log.Error().Err(err).Msg("Error committing transaction")
-		return fmt.Errorf("error committing transaction: %w", err)
+	if err := commitTx(tx); err != nil {
+		return err
 	}
 	tx = nil
 
 	// Verificação pós-update
-	if *updatedCount > 0 {
-		var mysqlDescricao string
-		var mysqlQtdAtual float64
-		var mysqlPrcCusto, mysqlPrcDolar, mysqlPrcVenda, mysqlPrc3x, mysqlPrc6x, mysqlPrc10x sql.NullFloat64
-		err = mysqlDB.QueryRow("SELECT DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR, PRC_VENDA, PRC_3X, PRC_6X, PRC_10X FROM TB_ESTOQUE WHERE ID_ESTOQUE = 17973").Scan(
-			&mysqlDescricao, &mysqlQtdAtual, &mysqlPrcCusto, &mysqlPrcDolar, &mysqlPrcVenda, &mysqlPrc3x, &mysqlPrc6x, &mysqlPrc10x)
-		if err != nil {
-			log.Error().Err(err).Msg("Error verifying updated row in MySQL")
-		} else {
-			log.Info().
-				Int("id_estoque", 17973).
-				Str("descricao", mysqlDescricao).
-				Float64("qtd_atual", mysqlQtdAtual).
-				Float64("prc_custo", mysqlPrcCusto.Float64).
-				Float64("prc_dolar", mysqlPrcDolar.Float64).
-				Float64("prc_venda", mysqlPrcVenda.Float64).
-				Float64("prc_3x", mysqlPrc3x.Float64).
-				Float64("prc_6x", mysqlPrc6x.Float64).
-				Float64("prc_10x", mysqlPrc10x.Float64).
-				Msg("Verified MySQL row after update")
-		}
-	}
+	verifyUpdatedRowIfNeeded(mysqlDB, *updatedCount)
 
 	// Wait for all goroutines to complete
 	wg.Wait()
 
-	// Call stored procedure to update virtual stock
-	startProc := time.Now()
-	_, err = mysqlDB.Exec("CALL UpdateQtdVirtual()")
-	if err != nil {
-		log.Error().Err(err).Msg("Error calling UpdateQtdVirtual procedure")
-		return fmt.Errorf("error calling UpdateQtdVirtual procedure: %w", err)
+	// Run post processing procedures
+	if err := runPostProcessing(mysqlDB, stats); err != nil {
+		return err
 	}
-	stats.ProcedureTime = time.Since(startProc)
-	log.Debug().Msg("UpdateQtdVirtual procedure executed successfully")
-
-	// Call procedure to split PartNumber from Description to PartNumber Field
-	startProc = time.Now()
-	_, err = mysqlDB.Exec("CALL SP_ATUALIZAR_PART_NUMBER()")
-	if err != nil {
-		log.Error().Err(err).Msg("Error calling SP_ATUALIZAR_PART_NUMBER procedure")
-		return fmt.Errorf("error calling SP_ATUALIZAR_PART_NUMBER procedure: %w", err)
-	}
-	stats.ProcedureTime = time.Since(startProc)
-	log.Debug().Msg("SP_ATUALIZAR_PART_NUMBER procedure executed successfully")
 
 	stats.TotalRows = rowCount
 	return nil
@@ -507,6 +470,70 @@ func executeBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, bat
 			}
 		}
 	}
+	return nil
+}
+
+// commitTx commits the transaction and logs errors
+func commitTx(tx *sql.Tx) error {
+	log := logger.GetLogger()
+	if tx == nil {
+		return nil
+	}
+	if err := tx.Commit(); err != nil {
+		log.Error().Err(err).Msg("Error committing transaction")
+		return fmt.Errorf("error committing transaction: %w", err)
+	}
+	return nil
+}
+
+// verifyUpdatedRowIfNeeded logs a verification of a specific test row when updates occurred
+func verifyUpdatedRowIfNeeded(db *sql.DB, updatedCount int) {
+	if updatedCount <= 0 {
+		return
+	}
+	log := logger.GetLogger()
+	var mysqlDescricao string
+	var mysqlQtdAtual float64
+	var mysqlPrcCusto, mysqlPrcDolar, mysqlPrcVenda, mysqlPrc3x, mysqlPrc6x, mysqlPrc10x sql.NullFloat64
+	err := db.QueryRow("SELECT DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR, PRC_VENDA, PRC_3X, PRC_6X, PRC_10X FROM TB_ESTOQUE WHERE ID_ESTOQUE = 17973").Scan(
+		&mysqlDescricao, &mysqlQtdAtual, &mysqlPrcCusto, &mysqlPrcDolar, &mysqlPrcVenda, &mysqlPrc3x, &mysqlPrc6x, &mysqlPrc10x)
+	if err != nil {
+		log.Error().Err(err).Msg("Error verifying updated row in MySQL")
+		return
+	}
+	log.Info().
+		Int("id_estoque", 17973).
+		Str("descricao", mysqlDescricao).
+		Float64("qtd_atual", mysqlQtdAtual).
+		Float64("prc_custo", mysqlPrcCusto.Float64).
+		Float64("prc_dolar", mysqlPrcDolar.Float64).
+		Float64("prc_venda", mysqlPrcVenda.Float64).
+		Float64("prc_3x", mysqlPrc3x.Float64).
+		Float64("prc_6x", mysqlPrc6x.Float64).
+		Float64("prc_10x", mysqlPrc10x.Float64).
+		Msg("Verified MySQL row after update")
+}
+
+// runPostProcessing executes DB procedures and updates stats
+func runPostProcessing(db *sql.DB, stats *ProcessingStats) error {
+	log := logger.GetLogger()
+	startProc := time.Now()
+	_, err := db.Exec("CALL UpdateQtdVirtual()")
+	if err != nil {
+		log.Error().Err(err).Msg("Error calling UpdateQtdVirtual procedure")
+		return fmt.Errorf("error calling UpdateQtdVirtual procedure: %w", err)
+	}
+	stats.ProcedureTime += time.Since(startProc)
+	log.Debug().Msg("UpdateQtdVirtual procedure executed successfully")
+
+	startProc = time.Now()
+	_, err = db.Exec("CALL SP_ATUALIZAR_PART_NUMBER()")
+	if err != nil {
+		log.Error().Err(err).Msg("Error calling SP_ATUALIZAR_PART_NUMBER procedure")
+		return fmt.Errorf("error calling SP_ATUALIZAR_PART_NUMBER procedure: %w", err)
+	}
+	stats.ProcedureTime += time.Since(startProc)
+	log.Debug().Msg("SP_ATUALIZAR_PART_NUMBER procedure executed successfully")
 	return nil
 }
 
