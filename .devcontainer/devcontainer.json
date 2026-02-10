@@ -1,14 +1,29 @@
 {
   "name": "Go Development",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "args": {
+      "GO_VERSION": "1.25.4",
+      "NVIM_VERSION": "0.11.5",
+      "JUST_VERSION": "1.40.0"
+    }
   },
   "customizations": {
     "vscode": {
       "extensions": [
-        "golang.Go"
-      ]
+        "golang.Go",
+        "GitHub.vscode-pull-request-github",
+        "eamodio.gitlens",
+        "skellock.just"
+      ],
+      "settings": {
+        "go.toolsManagement.autoUpdate": true,
+        "go.useLanguageServer": true,
+        "go.lintOnSave": "workspace",
+        "go.formatTool": "goimports"
+      }
     }
   },
-  "remoteUser": "vscode"
+  "remoteUser": "vscode",
+  "postCreateCommand": "go mod download"
 }
