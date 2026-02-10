@@ -13,6 +13,11 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Instalar just (command runner)
+RUN curl -qL https://github.com/casey/just/releases/download/1.40.0/just-1.40.0-x86_64-unknown-linux-musl.tar.gz | \
+    tar xz -C /usr/local/bin just && \
+    chmod +x /usr/local/bin/just
+
 # Criar usuário vscode
 RUN useradd -m -s /bin/zsh vscode && \
     echo "vscode ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
