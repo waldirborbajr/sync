@@ -1,5 +1,6 @@
-build_flags := "-s -w -X 'main.version=`git describe --tags --abbrev=0`'"
-image := "gocontainer:latest"
+version := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
+build_flags := "-s -w -X 'main.version=" + version + "'"
+image := "gocontainer"
 name := "gocontainer"
 dockerfile := ".devcontainer/Dockerfile"
 pwd := `pwd`
@@ -10,7 +11,8 @@ build:
     if command -v devpod &>/dev/null; then
         echo "devpod detected; skip docker build (use 'just on' to create the pod)"
     else
-        docker build -f {{dockerfile}} -t {{image}} .
+        docker build -f {{dockerfile}} -t {{image}}:{{version}} -t {{image}}:latest .
+        echo "Built {{image}}:{{version}} and tagged as {{image}}:latest"
     fi
 
 # Start container/pod
@@ -20,7 +22,7 @@ on:
         devpod up . --ide none
     else
         just build
-        docker run -d --name {{name}} -v "{{pwd}}:/workspace" -w /workspace {{image}} tail -f /dev/null
+        docker run -d --name {{name}} -v "{{pwd}}:/workspace" -w /workspace {{image}}:latest tail -f /dev/null
     fi
 
 # SSH into container/pod
@@ -48,7 +50,8 @@ delete:
         devpod delete {{name}} || true
     else
         docker rm -f {{name}} || true
-        docker image rm {{image}} || true
+        docker image rm {{image}}:{{version}} || true
+        docker image rm {{image}}:latest || true
     fi
 
 # Run tests with coverage
