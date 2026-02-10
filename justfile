@@ -1,7 +1,7 @@
 version := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
 build_flags := "-s -w -X 'main.version=" + version + "'"
-image := "gocontainer"
-name := "gocontainer"
+image := "fb2mysql"
+name := "fb2mysql"
 dockerfile := ".devcontainer/Dockerfile"
 pwd := `pwd`
 
