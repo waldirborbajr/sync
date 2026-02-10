@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"strings"
@@ -12,11 +13,12 @@ import (
 	"github.com/waldirborbajr/sync/processor"
 )
 
-// runProcessing orchestrates DB connections, statement preparation and processing rows.
+// runProcessing orchestrates DB connections with optimized worker pool processing
 func runProcessing(cfg config.Config) (inserted, updated, ignored, batchSize int, stats *processor.ProcessingStats, elapsed time.Duration, maxConnections int, maxAllowedPacket int, err error) {
 	log := logger.GetLogger()
-	// Connect to Firebird
-	firebirdConn, err := db.ConnectFirebird(cfg)
+
+	// Connect to Firebird with optimized settings
+	firebirdConn, err := db.ConnectFirebirdOptimized(cfg)
 	if err != nil {
 		return 0, 0, 0, 0, nil, 0, 0, 0, err
 	}
@@ -28,8 +30,8 @@ func runProcessing(cfg config.Config) (inserted, updated, ignored, batchSize int
 		}
 	}()
 
-	// Connect to MySQL
-	mysqlConn, err := db.ConnectMySQL(cfg)
+	// Connect to MySQL with optimized settings
+	mysqlConn, err := db.ConnectMySQLOptimized(cfg)
 	if err != nil {
 		return 0, 0, 0, 0, nil, 0, 0, 0, err
 	}
@@ -41,7 +43,7 @@ func runProcessing(cfg config.Config) (inserted, updated, ignored, batchSize int
 		}
 	}()
 
-	// Otimizações do MySQL
+	// MySQL optimizations
 	_, err = mysqlConn.Exec("SET unique_checks=0")
 	if err != nil {
 		log.Warn().Err(err).Msg("Could not set unique_checks=0")
@@ -51,34 +53,41 @@ func runProcessing(cfg config.Config) (inserted, updated, ignored, batchSize int
 		log.Warn().Err(err).Msg("Could not set foreign_key_checks=0")
 	}
 
-	// Get dynamic semaphore size and max_allowed_packet
-	semaphoreSize, maxConnections, maxAllowedPacket, err := db.GetSemaphoreSize(mysqlConn)
+	// Get MySQL parameters for reporting
+	var variableName string
+	err = mysqlConn.QueryRow("SHOW VARIABLES LIKE 'max_connections'").Scan(&variableName, &maxConnections)
 	if err != nil {
-		log.Warn().Err(err).Msg("Error retrieving MySQL variables, using defaults")
+		log.Warn().Err(err).Msg("Could not read max_connections")
+		maxConnections = 200
 	}
 
-	// Prepare statements
-	updateStmt, insertStmt, err := db.PrepareStatements(mysqlConn)
+	err = mysqlConn.QueryRow("SHOW VARIABLES LIKE 'max_allowed_packet'").Scan(&variableName, &maxAllowedPacket)
 	if err != nil {
-		return 0, 0, 0, 0, nil, 0, 0, 0, err
+		log.Warn().Err(err).Msg("Could not read max_allowed_packet")
+		maxAllowedPacket = 4 * 1024 * 1024
 	}
-	defer func() {
-		if updateStmt != nil {
-			if cerr := updateStmt.Close(); cerr != nil {
-				log.Error().Err(cerr).Msg("Error closing MySQL update statement")
-			}
-		}
-		if insertStmt != nil {
-			if cerr := insertStmt.Close(); cerr != nil {
-				log.Error().Err(cerr).Msg("Error closing MySQL insert statement")
-			}
-		}
-	}()
 
-	// Processing
+	// Calculate optimal worker count
+	numWorkers := runtime.NumCPU() * 2
+	if numWorkers > 20 {
+		numWorkers = 20 // Cap at 20 for safety
+	}
+	if numWorkers < 4 {
+		numWorkers = 4 // Minimum workers
+	}
+
+	log.Info().
+		Int("num_workers", numWorkers).
+		Int("max_connections", maxConnections).
+		Int("max_allowed_packet_mb", maxAllowedPacket/(1024*1024)).
+		Msg("Starting optimized sync with worker pool")
+
+	// Processing with optimized worker pool
+	ctx := context.Background()
 	stats = &processor.ProcessingStats{}
 	startTime := time.Now()
-	err = processor.ProcessRows(firebirdConn, mysqlConn, updateStmt, insertStmt, semaphoreSize, maxAllowedPacket, &inserted, &updated, &ignored, &batchSize, stats, cfg)
+
+	inserted, updated, ignored, batchSize, stats, err = processor.ProcessRowsOptimized(ctx, firebirdConn, mysqlConn, numWorkers, cfg)
 	if err != nil {
 		return 0, 0, 0, 0, nil, 0, 0, 0, err
 	}
@@ -98,12 +107,12 @@ func runProcessing(cfg config.Config) (inserted, updated, ignored, batchSize int
 }
 
 // printSummary prints the performance report
-func printSummary(inserted, updated, ignored int, batchSize int, stats *processor.ProcessingStats, elapsed time.Duration, semaphoreSize, maxConnections, maxAllowedPacket int) {
+func printSummary(inserted, updated, ignored int, batchSize int, stats *processor.ProcessingStats, elapsed time.Duration, numWorkers, maxConnections, maxAllowedPacket int) {
 	// Keep the printing logic minimal here — same formatting as before
-	fmtPrintReport(inserted, updated, ignored, batchSize, stats, elapsed, semaphoreSize, maxConnections, maxAllowedPacket)
+	fmtPrintReport(inserted, updated, ignored, batchSize, stats, elapsed, numWorkers, maxConnections, maxAllowedPacket)
 }
 
-func fmtPrintReport(inserted, updated, ignored int, batchSize int, stats *processor.ProcessingStats, elapsed time.Duration, semaphoreSize, maxConnections, maxAllowedPacket int) {
+func fmtPrintReport(inserted, updated, ignored int, batchSize int, stats *processor.ProcessingStats, elapsed time.Duration, numWorkers, maxConnections, maxAllowedPacket int) {
 	totalRows := inserted + updated + ignored
 	rowsPerSecond := 0.0
 	mbPerSecond := 0.0
@@ -121,7 +130,7 @@ func fmtPrintReport(inserted, updated, ignored int, batchSize int, stats *proces
 	fmt.Println("DATABASE CONFIGURATION:")
 	fmt.Printf("  MySQL max_connections: \033[1;32m%d\033[0m\n", maxConnections)
 	fmt.Printf("  MySQL max_allowed_packet: \033[1;32m%d MB\033[0m\n", maxAllowedPacket/(1024*1024))
-	fmt.Printf("  Used semaphore size: \033[1;32m%d/%d\033[0m\n", semaphoreSize, maxConnections)
+	fmt.Printf("  Worker pool size: \033[1;32m%d workers\033[0m\n", numWorkers)
 	fmt.Printf("  Batch size: \033[1;32m%d rows\033[0m\n", batchSize)
 
 	// Performance Metrics

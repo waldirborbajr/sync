@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime"
 
 	"github.com/waldirborbajr/sync/config"
 	"github.com/waldirborbajr/sync/logger"
@@ -54,7 +55,7 @@ func main() {
 		// we'll assume it's ok or handle differently if needed
 	}
 
-	fmt.Printf("\nSynC Firebird x MySQL v%s\n\n", version)
+	fmt.Printf("\nSynC Firebird x MySQL v%s (Optimized Worker Pool)\n\n", version)
 
 	// Run main processing and print a summarized report
 	insertedCount, updatedCount, ignoredCount, batchSize, stats, elapsedTime, maxConnections, maxAllowedPacket, err := runProcessing(cfg)
@@ -62,12 +63,14 @@ func main() {
 		log.Fatal().Err(err).Msg("Error processing rows")
 	}
 
-	semaphoreSize := int(float64(maxConnections) * 0.75)
-	if semaphoreSize < 10 {
-		semaphoreSize = 10
-	} else if semaphoreSize > 100 {
-		semaphoreSize = 100
+	// Calculate number of workers used
+	numWorkers := runtime.NumCPU() * 2
+	if numWorkers > 20 {
+		numWorkers = 20
+	}
+	if numWorkers < 4 {
+		numWorkers = 4
 	}
 
-	printSummary(insertedCount, updatedCount, ignoredCount, batchSize, stats, elapsedTime, semaphoreSize, maxConnections, maxAllowedPacket)
+	printSummary(insertedCount, updatedCount, ignoredCount, batchSize, stats, elapsedTime, numWorkers, maxConnections, maxAllowedPacket)
 }
