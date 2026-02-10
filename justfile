@@ -6,9 +6,21 @@ dockerfile := "Dockerfile"
 devcontainer_dockerfile := ".devcontainer/Dockerfile"
 pwd := `pwd`
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 🔍 INFO & HELP
+# ═════════════════════════════════════════════════════════════════════════════
+
 # List all available commands
 @default:
     just --list
+
+# Show current version
+show-version:
+    @echo "Current version: {{version}}"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 🐳 DOCKER - BUILD
+# ═════════════════════════════════════════════════════════════════════════════
 
 # Build production Docker image
 build:
@@ -19,6 +31,10 @@ build:
 build-dev:
     docker build -f {{devcontainer_dockerfile}} -t {{image}}-devcontainer:latest .
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 🐳 DOCKER - RUN
+# ═════════════════════════════════════════════════════════════════════════════
+
 # Run the production container
 run *ARGS:
     docker run --rm {{image}}:latest {{ARGS}}
@@ -26,6 +42,10 @@ run *ARGS:
 # Run the production container interactively
 run-interactive:
     docker run --rm -it {{image}}:latest
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 🐳 DEVCONTAINER
+# ═════════════════════════════════════════════════════════════════════════════
 
 # Start devcontainer manually (normally use VS Code's "Reopen in Container")
 dev-start:
@@ -72,32 +92,9 @@ clean:
     docker image rm {{image}}:latest || true
     docker image rm {{image}}-devcontainer:latest || true
 
-# Run tests with coverage
-test:
-    mockery && go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
-
-# Run tests without mockery  
-test-only:
-    go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
-
-# Format Go code
-fmt:
-    goimports -w .
-    go fmt ./...
-
-# Lint Go code
-lint:
-    staticcheck ./...
-    go vet ./...
-
-# Update Go dependencies
-deps:
-    go get -u ./...
-    go mod tidy
-
-# Download Go dependencies
-deps-download:
-    go mod download
+# ═════════════════════════════════════════════════════════════════════════════
+# 🔨 GO - BUILD & BINARIES
+# ═════════════════════════════════════════════════════════════════════════════
 
 # Build the sync binary locally
 build-binary:
@@ -111,6 +108,45 @@ install: build-binary
 run-local *ARGS:
     go run -ldflags {{build_flags}} ./main.go {{ARGS}}
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 📋 GO - CODE QUALITY
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Format Go code
+fmt:
+    goimports -w .
+    go fmt ./...
+
+# Lint Go code
+lint:
+    staticcheck ./...
+    go vet ./...
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 🧪 GO - TESTING & DEPENDENCIES
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Run tests with coverage
+test:
+    mockery && go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
+
+# Run tests without mockery
+test-only:
+    go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
+
+# Update Go dependencies
+deps:
+    go get -u ./...
+    go mod tidy
+
+# Download Go dependencies
+deps-download:
+    go mod download
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 🚀 RELEASE & VERSIONING
+# ═════════════════════════════════════════════════════════════════════════════
+
 # Create and push a new git tag (usage: just tag v1.0.0)
 tag VERSION:
     #!/usr/bin/env bash
@@ -123,9 +159,9 @@ tag VERSION:
     git push origin {{VERSION}}
     echo "Tag {{VERSION}} created and pushed"
 
-# Show current version
-show-version:
-    @echo "Current version: {{version}}"
+# ═════════════════════════════════════════════════════════════════════════════
+# ⚡ PERFORMANCE
+# ═════════════════════════════════════════════════════════════════════════════
 
 # Run performance comparison (requires both versions built)
 benchmark:
