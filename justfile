@@ -126,3 +126,18 @@ tag VERSION:
 # Show current version
 show-version:
     @echo "Current version: {{version}}"
+
+# Run performance comparison (requires both versions built)
+benchmark:
+    @echo "Running performance benchmark..."
+    @echo "Note: Ensure you have a test dataset ready"
+    @echo "\n=== Original Version ==="
+    time ./sync-original || echo "Build sync-original first"
+    @echo "\n=== Optimized Version ==="
+    time ./sync-optimized || echo "Build sync-optimized first"
+
+# Build optimized version (experimental)
+build-optimized:
+    @echo "Building optimized version..."
+    @echo "Note: This uses the experimental optimized processor"
+    @echo "To enable: modify main_helpers.go to use processor.ProcessRowsOptimized()"
