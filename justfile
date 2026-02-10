@@ -61,3 +61,19 @@ test:
 # Build the sync binary
 build-binary:
     go build -ldflags {{build_flags}} -o `go env GOPATH`/bin/sync
+
+# Create and push a new git tag (usage: just tag v1.0.0)
+tag VERSION:
+    #!/usr/bin/env bash
+    if [[ ! "{{VERSION}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Version must be in format v1.2.3"
+        exit 1
+    fi
+    echo "Creating tag {{VERSION}}..."
+    git tag -a {{VERSION}} -m "Release {{VERSION}}"
+    git push origin {{VERSION}}
+    echo "Tag {{VERSION}} created and pushed"
+
+# Show current version
+show-version:
+    @echo "Current version: {{version}}"
