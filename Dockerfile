@@ -1,5 +1,5 @@
 # Stage 1: Build the Go binary
-FROM golang:1.22 AS builder
+FROM cgr.dev/chainguard/go:1.22 AS builder
 
 WORKDIR /app
 
@@ -12,16 +12,13 @@ COPY . .
 
 # Build the binary with optimized flags for Linux, using VERSION from build arg
 ARG VERSION
-RUN GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -gcflags="all=-N -l" -trimpath -buildmode=pie -o sync ./main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -gcflags="all=-N -l" -trimpath -buildmode=pie -o sync ./main.go
 
 # Stage 2: Create a minimal runtime image
-FROM alpine:latest
-
-# Install ca-certificates for secure connections
-RUN apk --no-cache add ca-certificates
+FROM cgr.dev/chainguard/static:latest
 
 # Copy the binary from the builder stage
 COPY --from=builder /app/sync /usr/local/bin/sync
 
 # Set the entrypoint to run the sync tool
-ENTRYPOINT ["sync"]
+ENTRYPOINT ["/usr/local/bin/sync"]
