@@ -144,6 +144,39 @@ func LoadConfig() (Config, error) {
 	return cfg, nil
 }
 
+// LoadUpdateConfig loads only the update-related settings without validating DB config.
+func LoadUpdateConfig() (Config, error) {
+	log := logger.GetLogger()
+
+	if err := godotenv.Load(); err != nil {
+		log.Warn().Err(err).Msg("Error loading .env file for update config")
+	}
+
+	autoUpdate, err := strconv.ParseBool(os.Getenv("AUTO_UPDATE"))
+	if err != nil {
+		log.Warn().Err(err).Str("AUTO_UPDATE", os.Getenv("AUTO_UPDATE")).Msg("Invalid AUTO_UPDATE value, defaulting to false")
+	}
+
+	updateDir := os.Getenv("UPDATE_DOWNLOAD_DIR")
+	if updateDir == "" {
+		updateDir = "."
+	}
+
+	cfg := Config{
+		UpdateCheckURL:    os.Getenv("UPDATE_CHECK_URL"),
+		AutoUpdate:        autoUpdate,
+		UpdateDownloadDir: updateDir,
+	}
+
+	log.Debug().
+		Str("UPDATE_CHECK_URL", cfg.UpdateCheckURL).
+		Bool("AUTO_UPDATE", cfg.AutoUpdate).
+		Str("UPDATE_DOWNLOAD_DIR", cfg.UpdateDownloadDir).
+		Msg("Update configuration loaded")
+
+	return cfg, nil
+}
+
 // GetFirebirdDSN constructs the Firebird connection string
 func (c Config) GetFirebirdDSN() string {
 	return fmt.Sprintf("%s:%s@%s/%s", c.FirebirdUser, c.FirebirdPassword, c.FirebirdHost, c.FirebirdPath)

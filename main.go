@@ -26,10 +26,9 @@ func main() {
 
 	// Check for updates first
 	ctx := context.Background()
-	cfgForUpdate := config.Config{
-		UpdateCheckURL:    "", // will use default GitHub URL
-		AutoUpdate:        false,
-		UpdateDownloadDir: ".",
+	cfgForUpdate, err := config.LoadUpdateConfig()
+	if err != nil {
+		log.Warn().Err(err).Msg("Error loading update configuration")
 	}
 	downloaded, path, info, err := updater.RunUpdateFlow(ctx, version, cfgForUpdate)
 	if err != nil {

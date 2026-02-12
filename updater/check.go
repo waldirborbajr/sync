@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -126,9 +127,9 @@ func fetchFromGitHubAPI(ctx context.Context, owner, repo string) (UpdateInfo, er
 	}
 
 	info := UpdateInfo{Version: gh.TagName}
-	// Prefer first asset download URL
-	if len(gh.Assets) > 0 && gh.Assets[0].BrowserDownloadURL != "" {
-		info.URL = gh.Assets[0].BrowserDownloadURL
+
+	if url := selectAssetURL(gh.Assets, runtime.GOOS, runtime.GOARCH); url != "" {
+		info.URL = url
 		return info, nil
 	}
 	// Fallback to zipball URL
@@ -138,4 +139,69 @@ func fetchFromGitHubAPI(ctx context.Context, owner, repo string) (UpdateInfo, er
 	}
 	// No useful URL found
 	return info, nil
+}
+
+func selectAssetURL(assets []struct {
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Name               string `json:"name"`
+}, goos, goarch string) string {
+	if len(assets) == 0 {
+		return ""
+	}
+
+	osTokens := osMatchTokens(goos)
+	archTokens := archMatchTokens(goarch)
+
+	for _, a := range assets {
+		name := strings.ToLower(a.Name)
+		if name == "" || a.BrowserDownloadURL == "" {
+			continue
+		}
+		if matchesAnyToken(name, osTokens) && matchesAnyToken(name, archTokens) {
+			return a.BrowserDownloadURL
+		}
+	}
+
+	for _, a := range assets {
+		if a.BrowserDownloadURL != "" {
+			return a.BrowserDownloadURL
+		}
+	}
+
+	return ""
+}
+
+func osMatchTokens(goos string) []string {
+	switch strings.ToLower(goos) {
+	case "darwin":
+		return []string{"darwin", "macos", "mac", "osx"}
+	case "windows":
+		return []string{"windows", "win"}
+	case "linux":
+		return []string{"linux"}
+	default:
+		return []string{strings.ToLower(goos)}
+	}
+}
+
+func archMatchTokens(goarch string) []string {
+	switch strings.ToLower(goarch) {
+	case "amd64":
+		return []string{"amd64", "x86_64"}
+	case "arm64":
+		return []string{"arm64", "aarch64"}
+	case "386":
+		return []string{"386", "x86"}
+	default:
+		return []string{strings.ToLower(goarch)}
+	}
+}
+
+func matchesAnyToken(name string, tokens []string) bool {
+	for _, t := range tokens {
+		if strings.Contains(name, t) {
+			return true
+		}
+	}
+	return false
 }

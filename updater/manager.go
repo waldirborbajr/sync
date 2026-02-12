@@ -24,6 +24,10 @@ func RunUpdateFlow(ctx context.Context, currentVersion string, cfg config.Config
 		if err != nil {
 			return false, "", info, err
 		}
+		log.Info().Msg("Installing update...")
+		if err := InstallUpdateWithContext(ctx, path); err != nil {
+			return true, path, info, err
+		}
 		return true, path, info, nil
 	}
 
