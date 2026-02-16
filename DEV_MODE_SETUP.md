@@ -245,7 +245,13 @@ Development mode works by:
 1. `config/config.go` - Reads `DEV_MODE` environment variable and skips credential validation
 2. `db/db.go` - Routes `ConnectFirebird()` and `ConnectMySQL()` calls to dev functions when `cfg.DevMode=true`
 3. `db/db_dev.go` - Contains SQLite connection functions and schema initialization
-4. The rest of the application code remains unchanged - it uses the same `*sql.DB` interfaces
+4. `processor/processor.go` - Skips MySQL stored procedures (`UpdateQtdVirtual`, `SP_ATUALIZAR_PART_NUMBER`) in dev mode since SQLite doesn't support them
+5. The rest of the application code remains unchanged - it uses the same `*sql.DB` interfaces
+
+**SQLite Limitations in Dev Mode:**
+- No stored procedures support (auto-skipped)
+- Serialized writes only (MaxOpenConns=1)
+- Different SQL syntax for some advanced features
 
 ## Benefits
 
@@ -292,3 +298,14 @@ go run .
 ```bash
 ls -la dev_firebird_data.sql  # Should exist
 ```
+
+### "SQL logic error: near CALL" or stored procedure errors
+
+**Cause:** SQLite doesn't support stored procedures
+
+**Solution:** Already fixed! The code automatically skips MySQL stored procedures (`UpdateQtdVirtual`, `SP_ATUALIZAR_PART_NUMBER`) when `DEV_MODE=true`. You should see an info log message:
+```
+DEV_MODE: Skipping MySQL stored procedures - not supported in SQLite
+```
+
+If you still see this error, ensure you're using the latest version of the code.

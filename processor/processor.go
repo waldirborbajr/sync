@@ -153,7 +153,7 @@ func ProcessRows(ctx context.Context, firebirdDB, mysqlDB *sql.DB, numWorkers in
 	stats.TotalRows = rowCount
 
 	// Run post-processing procedures
-	if err := runPostProcessing(mysqlDB, stats); err != nil {
+	if err := runPostProcessing(mysqlDB, stats, cfg); err != nil {
 		return 0, 0, 0, 0, nil, err
 	}
 
@@ -610,8 +610,15 @@ func verifyUpdatedRowIfNeeded(db *sql.DB, updatedCount int) {
 }
 
 // runPostProcessing executes DB procedures and updates stats
-func runPostProcessing(db *sql.DB, stats *ProcessingStats) error {
+func runPostProcessing(db *sql.DB, stats *ProcessingStats, cfg config.Config) error {
 	log := logger.GetLogger()
+
+	// Skip stored procedures in dev mode - SQLite doesn't support them
+	if cfg.DevMode {
+		log.Info().Msg("DEV_MODE: Skipping MySQL stored procedures (UpdateQtdVirtual, SP_ATUALIZAR_PART_NUMBER) - not supported in SQLite")
+		return nil
+	}
+
 	startProc := time.Now()
 	_, err := db.Exec("CALL UpdateQtdVirtual()")
 	if err != nil {
