@@ -22,10 +22,20 @@ func ConnectFirebirdDev(cfg config.Config) (*sql.DB, error) {
 		dbExists = true
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// SQLite connection string with optimizations for concurrent access
+	// _busy_timeout: Wait up to 5 seconds if database is locked
+	// _journal_mode=WAL: Write-Ahead Logging for better concurrent performance
+	// _sync=NORMAL: Faster writes (acceptable for dev/test)
+	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_sync=NORMAL"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("error opening SQLite Firebird mock: %w", err)
 	}
+
+	// Limit connections for SQLite (designed for single writer)
+	// MaxOpenConns=1 ensures serialized writes, preventing SQLITE_BUSY errors
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	if err = db.Ping(); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
@@ -45,7 +55,8 @@ func ConnectFirebirdDev(cfg config.Config) (*sql.DB, error) {
 
 	log.Info().
 		Str("path", dbPath).
-		Msg("SQLite Firebird mock connected successfully (DEV MODE)")
+		Int("max_open_conns", 1).
+		Msg("SQLite Firebird mock connected successfully (DEV MODE - writes serialized)")
 	return db, nil
 }
 
@@ -61,10 +72,20 @@ func ConnectMySQLDev(cfg config.Config) (*sql.DB, error) {
 		dbExists = true
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// SQLite connection string with optimizations for concurrent access
+	// _busy_timeout: Wait up to 5 seconds if database is locked
+	// _journal_mode=WAL: Write-Ahead Logging for better concurrent performance
+	// _sync=NORMAL: Faster writes (acceptable for dev/test)
+	dsn := dbPath + "?_busy_timeout=5000&_journal_mode=WAL&_sync=NORMAL"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("error opening SQLite MySQL mock: %w", err)
 	}
+
+	// Limit connections for SQLite (designed for single writer)
+	// MaxOpenConns=1 ensures serialized writes, preventing SQLITE_BUSY errors
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	if err = db.Ping(); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
@@ -85,7 +106,8 @@ func ConnectMySQLDev(cfg config.Config) (*sql.DB, error) {
 
 	log.Info().
 		Str("path", dbPath).
-		Msg("SQLite MySQL mock connected successfully (DEV MODE)")
+		Int("max_open_conns", 1).
+		Msg("SQLite MySQL mock connected successfully (DEV MODE - writes serialized)")
 	return db, nil
 }
 

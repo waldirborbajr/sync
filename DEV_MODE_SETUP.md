@@ -154,6 +154,24 @@ sqlite3 dev_firebird.db "SELECT * FROM TB_ESTOQUE;"
 sqlite3 dev_mysql.db "SELECT * FROM TB_ESTOQUE;"
 ```
 
+## Performance Characteristics
+
+### SQLite Concurrency Handling
+
+SQLite is optimized for single-writer scenarios. To prevent "database is locked" errors, the dev mode implementation:
+
+- **Serializes writes**: `MaxOpenConns=1` ensures only one connection can write at a time
+- **WAL mode enabled**: Write-Ahead Logging improves concurrent read performance
+- **Busy timeout**: 5-second wait if database is locked
+- **Sync mode**: Set to NORMAL for faster writes (safe for development)
+
+**Expected behavior:**
+- Multiple worker goroutines will queue writes sequentially
+- Sync performance will be slower than production Firebird/MySQL
+- Read operations remain fast and non-blocking
+
+**Performance tip:** Development mode is designed for testing correctness, not performance benchmarking. Use production databases for performance testing.
+
 ## Resetting Mock Data
 
 ### Option 1: Using the Reset Script (Recommended)
