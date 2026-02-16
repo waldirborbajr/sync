@@ -8,6 +8,7 @@ require (
 	github.com/nakagami/firebirdsql v0.9.15
 	github.com/rs/zerolog v1.34.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
+	modernc.org/sqlite v1.34.4
 )
 
 require github.com/stretchr/testify v1.10.0 // indirect

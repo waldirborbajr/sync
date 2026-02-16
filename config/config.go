@@ -25,11 +25,12 @@ type Config struct {
 	Parc6x           float64
 	Parc10x          float64
 	DebugMode        bool // Novo campo para modo debug
+	DevMode          bool // Use SQLite mocks instead of real databases
 
 	// Update settings
-	UpdateCheckURL     string // Endpoint returning latest version info (JSON: {"version":"v1.2.3","url":"https://..."})
-	AutoUpdate         bool   // If true, will attempt to download the update automatically
-	UpdateDownloadDir  string // Directory to save downloaded update
+	UpdateCheckURL    string // Endpoint returning latest version info (JSON: {"version":"v1.2.3","url":"https://..."})
+	AutoUpdate        bool   // If true, will attempt to download the update automatically
+	UpdateDownloadDir string // Directory to save downloaded update
 }
 
 // LoadConfig loads environment variables from .env file
@@ -67,6 +68,12 @@ func LoadConfig() (Config, error) {
 		log.Warn().Err(err).Str("DEBUG_MODE", os.Getenv("DEBUG_MODE")).Msg("Invalid DEBUG_MODE value, defaulting to false")
 	}
 
+	// Parse dev mode
+	devMode, err := strconv.ParseBool(os.Getenv("DEV_MODE"))
+	if err != nil {
+		log.Warn().Err(err).Str("DEV_MODE", os.Getenv("DEV_MODE")).Msg("Invalid DEV_MODE value, defaulting to false")
+	}
+
 	// Parse update settings
 	autoUpdate, err := strconv.ParseBool(os.Getenv("AUTO_UPDATE"))
 	if err != nil {
@@ -93,33 +100,38 @@ func LoadConfig() (Config, error) {
 	}
 
 	cfg := Config{
-		FirebirdUser:     os.Getenv("FIREBIRD_USER"),
-		FirebirdPassword: os.Getenv("FIREBIRD_PASSWORD"),
-		FirebirdHost:     os.Getenv("FIREBIRD_HOST"),
-		FirebirdPath:     os.Getenv("FIREBIRD_PATH"),
-		MySQLUser:        os.Getenv("MYSQL_USER"),
-		MySQLPassword:    os.Getenv("MYSQL_PASSWORD"),
-		MySQLHost:        os.Getenv("MYSQL_HOST"),
-		MySQLPort:        os.Getenv("MYSQL_PORT"),
-		MySQLDatabase:    os.Getenv("MYSQL_DATABASE"),
-		Lucro:            lucro,
-		Parc3x:           parc3x,
-		Parc6x:           parc6x,
-		Parc10x:          parc10x,
-		DebugMode:        debugMode,
-		UpdateCheckURL:   os.Getenv("UPDATE_CHECK_URL"),
-		AutoUpdate:       autoUpdate,
+		FirebirdUser:      os.Getenv("FIREBIRD_USER"),
+		FirebirdPassword:  os.Getenv("FIREBIRD_PASSWORD"),
+		FirebirdHost:      os.Getenv("FIREBIRD_HOST"),
+		FirebirdPath:      os.Getenv("FIREBIRD_PATH"),
+		MySQLUser:         os.Getenv("MYSQL_USER"),
+		MySQLPassword:     os.Getenv("MYSQL_PASSWORD"),
+		MySQLHost:         os.Getenv("MYSQL_HOST"),
+		MySQLPort:         os.Getenv("MYSQL_PORT"),
+		MySQLDatabase:     os.Getenv("MYSQL_DATABASE"),
+		Lucro:             lucro,
+		Parc3x:            parc3x,
+		Parc6x:            parc6x,
+		Parc10x:           parc10x,
+		DebugMode:         debugMode,
+		DevMode:           devMode,
+		UpdateCheckURL:    os.Getenv("UPDATE_CHECK_URL"),
+		AutoUpdate:        autoUpdate,
 		UpdateDownloadDir: updateDir,
 	}
 
-	// Validate required fields
-	if cfg.FirebirdUser == "" || cfg.FirebirdPassword == "" || cfg.FirebirdHost == "" || cfg.FirebirdPath == "" {
-		log.Error().Msg("Missing required Firebird environment variables")
-		return Config{}, fmt.Errorf("missing required Firebird environment variables")
-	}
-	if cfg.MySQLUser == "" || cfg.MySQLPassword == "" || cfg.MySQLHost == "" || cfg.MySQLPort == "" || cfg.MySQLDatabase == "" {
-		log.Error().Msg("Missing required MySQL environment variables")
-		return Config{}, fmt.Errorf("missing required MySQL environment variables")
+	// Validate required fields (skip validation in dev mode)
+	if !cfg.DevMode {
+		if cfg.FirebirdUser == "" || cfg.FirebirdPassword == "" || cfg.FirebirdHost == "" || cfg.FirebirdPath == "" {
+			log.Error().Msg("Missing required Firebird environment variables")
+			return Config{}, fmt.Errorf("missing required Firebird environment variables")
+		}
+		if cfg.MySQLUser == "" || cfg.MySQLPassword == "" || cfg.MySQLHost == "" || cfg.MySQLPort == "" || cfg.MySQLDatabase == "" {
+			log.Error().Msg("Missing required MySQL environment variables")
+			return Config{}, fmt.Errorf("missing required MySQL environment variables")
+		}
+	} else {
+		log.Info().Msg("DEV_MODE enabled - using SQLite mocks for Firebird and MySQL")
 	}
 
 	// Log loaded configuration for troubleshooting
@@ -136,6 +148,7 @@ func LoadConfig() (Config, error) {
 		Float64("PARC6X", cfg.Parc6x).
 		Float64("PARC10X", cfg.Parc10x).
 		Bool("DEBUG_MODE", cfg.DebugMode).
+		Bool("DEV_MODE", cfg.DevMode).
 		Str("UPDATE_CHECK_URL", cfg.UpdateCheckURL).
 		Bool("AUTO_UPDATE", cfg.AutoUpdate).
 		Str("UPDATE_DOWNLOAD_DIR", cfg.UpdateDownloadDir).

@@ -15,6 +15,11 @@ import (
 func ConnectFirebird(cfg config.Config) (*sql.DB, error) {
 	log := logger.GetLogger()
 
+	// Use SQLite mock in development mode
+	if cfg.DevMode {
+		return ConnectFirebirdDev(cfg)
+	}
+
 	db, err := sql.Open("firebirdsql", cfg.GetFirebirdDSN())
 	if err != nil {
 		return nil, fmt.Errorf("error opening Firebird connection: %w", err)
@@ -42,6 +47,11 @@ func ConnectFirebird(cfg config.Config) (*sql.DB, error) {
 // ConnectMySQL establishes an optimized connection to the MySQL database
 func ConnectMySQL(cfg config.Config) (*sql.DB, error) {
 	log := logger.GetLogger()
+
+	// Use SQLite mock in development mode
+	if cfg.DevMode {
+		return ConnectMySQLDev(cfg)
+	}
 
 	// Add connection parameters for better performance
 	dsn := cfg.GetMySQLDSN() + "&writeTimeout=10s&readTimeout=30s&timeout=5s"
