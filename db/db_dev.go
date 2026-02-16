@@ -22,7 +22,7 @@ func ConnectFirebirdDev(cfg config.Config) (*sql.DB, error) {
 		dbExists = true
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening SQLite Firebird mock: %w", err)
 	}
@@ -61,7 +61,7 @@ func ConnectMySQLDev(cfg config.Config) (*sql.DB, error) {
 		dbExists = true
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening SQLite MySQL mock: %w", err)
 	}
