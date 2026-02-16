@@ -254,3 +254,41 @@ Development mode works by:
 - **Reproducible**: Same sample data on every reset
 - **Portable**: Works on any system with Go and SQLite
 - **Safe**: Can't accidentally modify production databases during development
+
+## Troubleshooting
+
+### "database is locked" errors
+
+**Cause:** Multiple workers writing to SQLite simultaneously (older configurations)
+
+**Solution:** Already fixed! The connection pool is limited to 1 connection with WAL mode enabled. If you still see this error:
+
+```bash
+# Delete databases and let them be recreated with proper settings
+rm dev_firebird.db dev_mysql.db
+go run .
+```
+
+### "unknown driver sqlite3" error
+
+**Cause:** Wrong driver name for `modernc.org/sqlite`
+
+**Solution:** Use driver name `"sqlite"` (not `"sqlite3"`). This is already configured correctly in `db/db_dev.go`.
+
+### Slow sync performance in dev mode
+
+**Expected behavior:** SQLite dev mode is slower than production because:
+- Writes are serialized (MaxOpenConns=1)
+- SQLite has different performance characteristics than Firebird/MySQL
+
+**Not an issue:** Dev mode is for testing logic, not performance. Use production databases for benchmarking.
+
+### SQL file not loading automatically
+
+**Symptoms:** Only 7 products created instead of 110
+
+**Solution:** Ensure `dev_firebird_data.sql` is in the project root directory (same location as `main.go`)
+
+```bash
+ls -la dev_firebird_data.sql  # Should exist
+```
