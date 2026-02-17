@@ -200,6 +200,25 @@ func initFirebirdSchema(db *sql.DB) error {
 
 // initMySQLSchema creates the TB_ESTOQUE table for MySQL mock
 func initMySQLSchema(db *sql.DB) error {
+	log := logger.GetLogger()
+
+	// Try to load from dev_mysql_data.sql file
+	sqlFilePath := "./dev_mysql_data.sql"
+	if sqlContent, err := os.ReadFile(sqlFilePath); err == nil {
+		log.Info().Str("file", sqlFilePath).Msg("Loading MySQL schema from SQL file")
+
+		// Execute the SQL file content
+		if _, err := db.Exec(string(sqlContent)); err != nil {
+			return fmt.Errorf("error executing SQL from file %s: %w", sqlFilePath, err)
+		}
+
+		log.Info().Msg("MySQL schema loaded successfully from SQL file (target database simulated)")
+		return nil
+	}
+
+	// Fallback: Use minimal hardcoded schema if SQL file doesn't exist
+	log.Warn().Str("file", sqlFilePath).Msg("SQL file not found, creating empty MySQL target table")
+
 	schema := `
 	CREATE TABLE IF NOT EXISTS TB_ESTOQUE (
 		ID_ESTOQUE INTEGER PRIMARY KEY,
@@ -218,6 +237,6 @@ func initMySQLSchema(db *sql.DB) error {
 		return fmt.Errorf("error creating MySQL mock schema: %w", err)
 	}
 
-	// Start with empty table - data will be synced from Firebird mock
+	log.Info().Msg("MySQL schema initialized with empty table (all records will be inserted)")
 	return nil
 }

@@ -24,13 +24,21 @@ fi
 # Create Firebird mock with sample data
 echo ""
 echo "📦 Creating Firebird mock database..."
-sqlite3 dev_firebird.db < dev_firebird_data.sql
-echo "✓ Firebird mock created with 110 products"
+if [ -f "dev_firebird_data.sql" ]; then
+    sqlite3 dev_firebird.db < dev_firebird_data.sql
+    echo "✓ Firebird mock created from dev_firebird_data.sql"
+else
+    echo "⚠️  dev_firebird_data.sql not found - run 'go run .' to auto-create minimal data"
+fi
 
-# Create MySQL mock (empty table)
+# Create MySQL mock with optional pre-existing data
 echo ""
 echo "📦 Creating MySQL mock database..."
-sqlite3 dev_mysql.db <<EOF
+if [ -f "dev_mysql_data.sql" ]; then
+    sqlite3 dev_mysql.db < dev_mysql_data.sql
+    echo "✓ MySQL mock created from dev_mysql_data.sql (with pre-existing data)"
+else
+    sqlite3 dev_mysql.db <<EOF
 CREATE TABLE TB_ESTOQUE (
     ID_ESTOQUE INTEGER PRIMARY KEY,
     DESCRICAO TEXT NOT NULL,
@@ -43,17 +51,32 @@ CREATE TABLE TB_ESTOQUE (
     PRC_10X REAL DEFAULT 0
 );
 EOF
-echo "✓ MySQL mock created (empty table)"
+    echo "✓ MySQL mock created (empty table - all records will be inserted)"
+fi
 
 echo ""
 echo "✅ Development databases reset successfully!"
 echo ""
-echo "📊 Database Statistics:"
-sqlite3 dev_firebird.db "SELECT 
-    COUNT(*) as total,
-    SUM(CASE WHEN STATUS='A' THEN 1 ELSE 0 END) as active,
-    SUM(CASE WHEN STATUS='I' THEN 1 ELSE 0 END) as inactive
-FROM TB_ESTOQUE;" -header -column
+echo "📊 Firebird Database Statistics:"
+if [ -f "dev_firebird.db" ]; then
+    sqlite3 dev_firebird.db "SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN STATUS='A' THEN 1 ELSE 0 END) as active,
+        SUM(CASE WHEN STATUS='I' THEN 1 ELSE 0 END) as inactive
+    FROM TB_ESTOQUE;" -header -column
+fi
+
+echo ""
+echo "📊 MySQL Database Statistics:"
+if [ -f "dev_mysql.db" ]; then
+    MYSQL_COUNT=$(sqlite3 dev_mysql.db "SELECT COUNT(*) FROM TB_ESTOQUE;")
+    echo "Pre-existing records: $MYSQL_COUNT"
+    if [ "$MYSQL_COUNT" -gt 0 ]; then
+        echo "(These records will be checked for updates during sync)"
+    else
+        echo "(Empty table - all Firebird records will be inserted)"
+    fi
+fi
 
 echo ""
 echo "🚀 You can now run: go run ."

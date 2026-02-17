@@ -5,14 +5,19 @@ This document explains how to set up and use the development mode feature, which
 ## Overview
 
 Development mode (`DEV_MODE=true`) creates two SQLite database files that simulate Firebird and MySQL:
-- `dev_firebird.db` - Mocks the Firebird source database
-- `dev_mysql.db` - Mocks the MySQL target database (starts empty for sync testing)
+- `dev_firebird.db` - Mocks the Firebird source database (with product data)
+- `dev_mysql.db` - Mocks the MySQL target database (with optional pre-existing data)
 
-**Automatic Data Loading**: When creating `dev_firebird.db`, the application automatically looks for `dev_firebird_data.sql` in the current directory:
-- If found: Loads 110 products across 8 categories
-- If not found: Uses minimal hardcoded data (7 products)
+**Automatic Data Loading**: 
+- **Firebird Mock**: The application automatically looks for `dev_firebird_data.sql`:
+  - If found: Loads 110 products across 8 categories
+  - If not found: Uses minimal hardcoded data (7 products)
 
-To get the full dataset, simply ensure `dev_firebird_data.sql` is in your project root.
+- **MySQL Mock**: The application automatically looks for `dev_mysql_data.sql`:
+  - If found: Loads pre-existing records to simulate a target database with data
+  - If not found: Creates an empty table (all records will be inserted during sync)
+
+To get the full testing experience, simply ensure both SQL files are in your project root.
 
 ## Setup Instructions
 
@@ -75,8 +80,8 @@ go run .
 ```
 
 On first run, the application will:
-1. Create `dev_firebird.db` with sample product data
-2. Create `dev_mysql.db` with an empty TB_ESTOQUE table
+1. Create `dev_firebird.db` with sample product data (from `dev_firebird_data.sql` if present)
+2. Create `dev_mysql.db` with target table structure (from `dev_mysql_data.sql` if present)
 3. Perform synchronization from Firebird mock to MySQL mock
 
 ## Mock Data
@@ -140,7 +145,27 @@ Only products with `STATUS='A'` will be synced to MySQL.
 
 ### MySQL Mock (dev_mysql.db)
 
-Starts with an empty `TB_ESTOQUE` table. After running the sync, it will contain all active products from Firebird with calculated prices (PRC_VENDA, PRC_3X, PRC_6X, PRC_10X).
+The MySQL target database simulation supports two modes:
+
+**With `dev_mysql_data.sql` present (recommended for testing):**
+- Simulates a target database with pre-existing records
+- Contains 3 sample products with old/outdated data
+- Allows testing UPDATE operations (when Firebird data differs)
+- Allows testing INSERT operations (for new products not in MySQL)
+- Allows testing IGNORED operations (when data matches exactly)
+
+**Without `dev_mysql_data.sql`:**
+- Starts with an empty `TB_ESTOQUE` table
+- All Firebird records will be INSERTED during sync
+- Good for testing clean initial sync
+
+**Testing Scenarios** (by editing `dev_mysql_data.sql`):
+1. **Test UPDATES**: Keep pre-existing records → They get updated with new Firebird data
+2. **Test INSERTS**: Remove all INSERT statements → All Firebird records get inserted
+3. **Test MIXED**: Keep some records → Mix of updates and inserts
+4. **Test IGNORED**: Add exact matches → Records with no changes are ignored
+
+After running the sync, the table will contain all active products from Firebird with calculated prices (PRC_VENDA, PRC_3X, PRC_6X, PRC_10X).
 
 ## Database Inspection
 
@@ -185,8 +210,8 @@ chmod +x reset_dev_db.sh  # First time only
 
 This script will:
 - Remove existing `dev_firebird.db` and `dev_mysql.db`
-- Create fresh Firebird mock with 110 products from `dev_firebird_data.sql`
-- Create empty MySQL mock ready for sync
+- Create fresh Firebird mock with 110 products from `dev_firebird_data.sql` (if present)
+- Create MySQL mock with pre-existing data from `dev_mysql_data.sql` (if present)
 - Show database statistics
 
 ### Option 2: Manual Reset
@@ -197,10 +222,13 @@ Manually recreate the databases:
 # Remove old databases
 rm -f dev_firebird.db dev_mysql.db
 
-# Recreate Firebird mock from SQL file
+# Recreate Firebird mock from SQL file (if you have it)
 sqlite3 dev_firebird.db < dev_firebird_data.sql
 
-# Recreate MySQL mock (empty)
+# Recreate MySQL mock from SQL file (if you have it)
+sqlite3 dev_mysql.db < dev_mysql_data.sql
+
+# OR create empty MySQL mock manually
 sqlite3 dev_mysql.db "CREATE TABLE TB_ESTOQUE (
     ID_ESTOQUE INTEGER PRIMARY KEY,
     DESCRICAO TEXT NOT NULL,
@@ -225,10 +253,11 @@ go run .
 
 **The application will automatically:**
 - Look for `dev_firebird_data.sql` and load it if present (110 products)
-- Otherwise, create minimal sample data (7 products)
-- Create empty MySQL mock ready for sync
+- Otherwise, create minimal Firebird sample data (7 products)
+- Look for `dev_mysql_data.sql` and load it if present (pre-existing data for testing)
+- Otherwise, create empty MySQL table (all records will be inserted)
 
-**Tip**: Keep `dev_firebird_data.sql` in your project root for automatic full data loading.
+**Tip**: Keep both `dev_firebird_data.sql` and `dev_mysql_data.sql` in your project root for automatic full data loading and realistic testing scenarios.
 
 ## Switching to Production
 
