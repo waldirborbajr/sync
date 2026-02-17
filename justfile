@@ -31,7 +31,7 @@ build:
 build-dev:
     docker build -f {{devcontainer_dockerfile}} -t {{image}}-devcontainer:latest .
 
-[group: 'docker-build']
+[group: 'go']
 build-binary:
     go build -ldflags {{build_flags}} -o `go env GOPATH`/bin/sync
 
@@ -128,11 +128,11 @@ lint:
 # Go / Testing
 # ──────────────────────────────────────────────────────────────────────────────
 
-[group: 'go-testing']
+[group: 'go']
 test:
     mockery && go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
 
-[group: 'go-testing']
+[group: 'go']
 test-only:
     go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
 
@@ -140,12 +140,12 @@ test-only:
 # Go / Dependencies
 # ──────────────────────────────────────────────────────────────────────────────
 
-[group: 'go-dependencies']
+[group: 'go']
 deps:
     go get -u ./...
     go mod tidy
 
-[group: 'go-dependencies']
+[group: 'go']
 deps-download:
     go mod download
 
@@ -153,7 +153,7 @@ deps-download:
 # Go / Installation
 # ──────────────────────────────────────────────────────────────────────────────
 
-[group: 'go-install']
+[group: 'go']
 install: build-binary
     @echo "sync installed to `go env GOPATH`/bin/sync"
 

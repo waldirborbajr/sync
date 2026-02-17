@@ -3,11 +3,11 @@ package updater
 import "testing"
 
 func TestParseGithubOwnerRepo(t *testing.T) {
-	cases := []struct{
-		url string
+	cases := []struct {
+		url       string
 		wantOwner string
-		wantRepo string
-		wantOK bool
+		wantRepo  string
+		wantOK    bool
 	}{
 		{"https://github.com/waldirborbajr/sync/releases/new", "waldirborbajr", "sync", true},
 		{"https://github.com/waldirborbajr/sync/releases/latest", "waldirborbajr", "sync", true},

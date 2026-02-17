@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+
 	"github.com/waldirborbajr/sync/config"
 	"github.com/waldirborbajr/sync/logger"
 )
