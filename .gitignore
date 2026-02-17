@@ -35,3 +35,5 @@ go.work.sum
 bin/
 .DS_Store
 sync*.log
+dev_firebird.db
+dev_mysql.db
