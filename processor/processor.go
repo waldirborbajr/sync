@@ -393,15 +393,6 @@ func loadMySQLRecords(db *sql.DB) (map[int]mysqlRecord, error) {
 	return records, rows.Err()
 }
 
-// loadMySQLRecordsForID
-func loadMySQLRecordsForID(idEstoque int, existingRecords map[int]mysqlRecord, rec *mysqlRecord) error {
-	if r, exists := existingRecords[idEstoque]; exists {
-		*rec = r
-		return nil
-	}
-	return fmt.Errorf("record not found in existingRecords for ID_ESTOQUE=%d", idEstoque)
-}
-
 // calculatePrices calcula os novos preços baseado nas regras
 func calculatePrices(prcCusto sql.NullFloat64, cfg config.Config) (prcVenda, prc3x, prc6x, prc10x float64) {
 	if !prcCusto.Valid || prcCusto.Float64 == 0 {
@@ -429,184 +420,11 @@ func calculatePrices(prcCusto sql.NullFloat64, cfg config.Config) (prcVenda, prc
 	return prcVenda, prc3x, prc6x, prc10x
 }
 
-// processRowForBatch otimizado com cálculo dos novos preços
-func processRowForBatch(existingRecords map[int]mysqlRecord, idEstoque int, descricao string, qtdAtual float64, prcCusto, prcDolar sql.NullFloat64, mu *sync.Mutex, insertedCount, updatedCount, ignoredCount *int, cfg config.Config) (string, []interface{}) {
-	log := logger.GetLogger()
-
-	// Log source (Firebird) row when DEBUG_MODE=true
-	if cfg.DebugMode {
-		log.Debug().
-			Str("source", "Firebird").
-			Int("id_estoque", idEstoque).
-			Str("descricao", descricao).
-			Float64("qtd_atual", qtdAtual).
-			Float64("prc_custo", roundFloat(prcCusto)).
-			Float64("prc_dolar", roundFloat(prcDolar)).
-			Msg("Processing Firebird row")
-	}
-
-	rec, exists := existingRecords[idEstoque]
-
-	// Log target (MySQL) row when DEBUG_MODE=true
-	if cfg.DebugMode {
-		if exists {
-			log.Debug().
-				Str("target", "MySQL").
-				Int("id_estoque", idEstoque).
-				Str("descricao", nullString(rec.Descricao)).
-				Float64("qtd_atual", nullFloat(rec.Quantidade)).
-				Float64("prc_custo", roundFloat(rec.ValorCusto)).
-				Float64("prc_dolar", roundFloat(rec.ValorUsd)).
-				Float64("prc_venda", roundFloat(rec.PrcVenda)).
-				Float64("prc_3x", roundFloat(rec.Prc3x)).
-				Float64("prc_6x", roundFloat(rec.Prc6x)).
-				Float64("prc_10x", roundFloat(rec.Prc10x)).
-				Msg("Comparing against MySQL record")
-		} else {
-			log.Debug().
-				Str("target", "MySQL").
-				Int("id_estoque", idEstoque).
-				Msg("No matching MySQL record found")
-		}
-	}
-
-	// Calcular os novos preços
-	prcVenda, prc3x, prc6x, prc10x := calculatePrices(prcCusto, cfg)
-
-	custo := roundFloat(prcCusto)
-	dolar := roundFloat(prcDolar)
-
-	if !exists {
-		mu.Lock()
-		*insertedCount++
-		mu.Unlock()
-
-		log.Debug().
-			Int("id_estoque", idEstoque).
-			Msg("Inserting new record")
-
-		return "insert", []any{idEstoque, descricao, qtdAtual, custo, dolar, prcVenda, prc3x, prc6x, prc10x}
-	}
-
-	existingCusto := roundFloat(rec.ValorCusto)
-	existingDolar := roundFloat(rec.ValorUsd)
-	existingPrcVenda := roundFloat(rec.PrcVenda)
-	existingPrc3x := roundFloat(rec.Prc3x)
-	existingPrc6x := roundFloat(rec.Prc6x)
-	existingPrc10x := roundFloat(rec.Prc10x)
-
-	if rec.Descricao.Valid && rec.Quantidade.Valid &&
-		rec.Descricao.String == descricao &&
-		rec.Quantidade.Float64 == qtdAtual &&
-		existingCusto == custo &&
-		existingDolar == dolar &&
-		existingPrcVenda == prcVenda &&
-		existingPrc3x == prc3x &&
-		existingPrc6x == prc6x &&
-		existingPrc10x == prc10x {
-		mu.Lock()
-		*ignoredCount++
-		mu.Unlock()
-		return "", nil
-	}
-
-	log.Info().
-		Int("id_estoque", idEstoque).
-		Str("descricao", descricao).
-		Float64("qtd_atual", qtdAtual).
-		Float64("prc_custo", custo).
-		Float64("prc_dolar", dolar).
-		Float64("prc_venda", prcVenda).
-		Float64("prc_3x", prc3x).
-		Float64("prc_6x", prc6x).
-		Float64("prc_10x", prc10x).
-		Msg("Updating record")
-
-	mu.Lock()
-	*updatedCount++
-	mu.Unlock()
-	return "update", []any{descricao, qtdAtual, custo, dolar, prcVenda, prc3x, prc6x, prc10x, idEstoque}
-}
-
 func roundFloat(value sql.NullFloat64) float64 {
 	if value.Valid {
 		return math.Round(value.Float64*100) / 100
 	}
 	return 0.0
-}
-
-// executeBatch otimizado com bulk operations
-func executeBatch(tx *sql.Tx, insertStmt, updateStmt *sql.Stmt, batchInsert, batchUpdate []any) error {
-	log := logger.GetLogger()
-
-	if len(batchInsert) > 0 {
-		log.Debug().Int("count", len(batchInsert)/9).Msg("Processing insert operations")
-		stmt := tx.Stmt(insertStmt)
-		for i := 0; i < len(batchInsert); i += 9 {
-			log.Debug().Interface("id_estoque", batchInsert[i]).Msg("Executing insert")
-			if _, err := stmt.Exec(batchInsert[i], batchInsert[i+1], batchInsert[i+2], batchInsert[i+3],
-				batchInsert[i+4], batchInsert[i+5], batchInsert[i+6], batchInsert[i+7], batchInsert[i+8]); err != nil {
-				log.Error().Err(err).Interface("id_estoque", batchInsert[i]).Msg("Error executing insert")
-				return fmt.Errorf("error executing batch insert: %w", err)
-			}
-		}
-	}
-
-	if len(batchUpdate) > 0 {
-		log.Debug().Int("count", len(batchUpdate)/9).Msg("Processing update operations")
-		stmt := tx.Stmt(updateStmt)
-		for i := 0; i < len(batchUpdate); i += 9 {
-			idEstoque := batchUpdate[i+8]
-			log.Debug().Interface("id_estoque", idEstoque).Msg("Executing update")
-			if _, err := stmt.Exec(batchUpdate[i], batchUpdate[i+1], batchUpdate[i+2], batchUpdate[i+3],
-				batchUpdate[i+4], batchUpdate[i+5], batchUpdate[i+6], batchUpdate[i+7], batchUpdate[i+8]); err != nil {
-				log.Error().Err(err).Interface("id_estoque", idEstoque).Msg("Error executing update")
-				return fmt.Errorf("error executing batch update: %w", err)
-			}
-		}
-	}
-	return nil
-}
-
-// commitTx commits the transaction and logs errors
-func commitTx(tx *sql.Tx) error {
-	log := logger.GetLogger()
-	if tx == nil {
-		return nil
-	}
-	if err := tx.Commit(); err != nil {
-		log.Error().Err(err).Msg("Error committing transaction")
-		return fmt.Errorf("error committing transaction: %w", err)
-	}
-	return nil
-}
-
-// verifyUpdatedRowIfNeeded logs a verification of a specific test row when updates occurred
-func verifyUpdatedRowIfNeeded(db *sql.DB, updatedCount int) {
-	if updatedCount <= 0 {
-		return
-	}
-	log := logger.GetLogger()
-	var mysqlDescricao string
-	var mysqlQtdAtual float64
-	var mysqlPrcCusto, mysqlPrcDolar, mysqlPrcVenda, mysqlPrc3x, mysqlPrc6x, mysqlPrc10x sql.NullFloat64
-	err := db.QueryRow("SELECT DESCRICAO, QTD_ATUAL, PRC_CUSTO, PRC_DOLAR, PRC_VENDA, PRC_3X, PRC_6X, PRC_10X FROM TB_ESTOQUE WHERE ID_ESTOQUE = 17973").Scan(
-		&mysqlDescricao, &mysqlQtdAtual, &mysqlPrcCusto, &mysqlPrcDolar, &mysqlPrcVenda, &mysqlPrc3x, &mysqlPrc6x, &mysqlPrc10x)
-	if err != nil {
-		log.Error().Err(err).Msg("Error verifying updated row in MySQL")
-		return
-	}
-	log.Info().
-		Int("id_estoque", 17973).
-		Str("descricao", mysqlDescricao).
-		Float64("qtd_atual", mysqlQtdAtual).
-		Float64("prc_custo", mysqlPrcCusto.Float64).
-		Float64("prc_dolar", mysqlPrcDolar.Float64).
-		Float64("prc_venda", mysqlPrcVenda.Float64).
-		Float64("prc_3x", mysqlPrc3x.Float64).
-		Float64("prc_6x", mysqlPrc6x.Float64).
-		Float64("prc_10x", mysqlPrc10x.Float64).
-		Msg("Verified MySQL row after update")
 }
 
 // runPostProcessing executes DB procedures and updates stats
@@ -637,19 +455,4 @@ func runPostProcessing(db *sql.DB, stats *ProcessingStats, cfg config.Config) er
 	stats.ProcedureTime += time.Since(startProc)
 	log.Debug().Msg("SP_ATUALIZAR_PART_NUMBER procedure executed successfully")
 	return nil
-}
-
-// Helper functions to handle null values in logging
-func nullString(ns sql.NullString) string {
-	if ns.Valid {
-		return ns.String
-	}
-	return ""
-}
-
-func nullFloat(nf sql.NullFloat64) float64 {
-	if nf.Valid {
-		return nf.Float64
-	}
-	return 0.0
 }
