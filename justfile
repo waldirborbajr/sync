@@ -1,3 +1,4 @@
+# Configuration variables
 version := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
 build_flags := "-s -w -X 'main.version=" + version + "'"
 image := "sync"
@@ -6,28 +7,72 @@ dockerfile := "Dockerfile"
 devcontainer_dockerfile := ".devcontainer/Dockerfile"
 pwd := `pwd`
 
-# List all available commands
+# ──────────────────────────────────────────────────────────────────────────────
+# General
+# ──────────────────────────────────────────────────────────────────────────────
+
 @default:
     just --list
 
-# Build production Docker image
+[group: 'general']
+show-version:
+    @echo "Current version: {{version}}"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Docker / Build
+# ──────────────────────────────────────────────────────────────────────────────
+
+[group: 'docker-build']
 build:
     docker build -f {{dockerfile}} --build-arg VERSION={{version}} -t {{image}}:{{version}} -t {{image}}:latest .
     @echo "Built {{image}}:{{version}} and tagged as {{image}}:latest"
 
-# Build devcontainer image (normally handled by VS Code)
+[group: 'docker-build']
 build-dev:
     docker build -f {{devcontainer_dockerfile}} -t {{image}}-devcontainer:latest .
 
-# Run the production container
+[group: 'docker-build']
+build-binary:
+    go build -ldflags {{build_flags}} -o `go env GOPATH`/bin/sync
+
+[group: 'docker-build']
+build-optimized:
+    @echo "Building optimized version..."
+    @echo "Note: This uses the experimental optimized processor"
+    @echo "To enable: modify main_helpers.go to use processor.ProcessRowsOptimized()"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Docker / Run
+# ──────────────────────────────────────────────────────────────────────────────
+
+[group: 'docker-run']
 run *ARGS:
     docker run --rm {{image}}:latest {{ARGS}}
 
-# Run the production container interactively
+[group: 'docker-run']
 run-interactive:
     docker run --rm -it {{image}}:latest
 
-# Start devcontainer manually (normally use VS Code's "Reopen in Container")
+[group: 'docker-run']
+run-local *ARGS:
+    go run -ldflags {{build_flags}} ./main.go {{ARGS}}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Docker / Management
+# ──────────────────────────────────────────────────────────────────────────────
+
+[group: 'docker-management']
+clean:
+    docker rm -f {{name}} || true
+    docker image rm {{image}}:{{version}} || true
+    docker image rm {{image}}:latest || true
+    docker image rm {{image}}-devcontainer:latest || true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Development / Environment
+# ──────────────────────────────────────────────────────────────────────────────
+
+[group: 'dev-env']
 dev-start:
     #!/usr/bin/env bash
     if command -v devpod &>/dev/null; then
@@ -37,7 +82,7 @@ dev-start:
         docker run -d --name {{name}} -v "{{pwd}}:/workspace" -w /workspace {{image}}-devcontainer:latest sleep infinity
     fi
 
-# SSH into devcontainer
+[group: 'dev-env']
 dev-shell:
     #!/usr/bin/env bash
     if command -v devpod &>/dev/null; then
@@ -46,7 +91,7 @@ dev-shell:
         docker exec -it --user vscode {{name}} zsh
     fi
 
-# Stop devcontainer
+[group: 'dev-env']
 dev-stop:
     #!/usr/bin/env bash
     if command -v devpod &>/dev/null; then
@@ -55,7 +100,7 @@ dev-stop:
         docker stop {{name}} || true
     fi
 
-# Delete devcontainer
+[group: 'dev-env']
 dev-delete:
     #!/usr/bin/env bash
     if command -v devpod &>/dev/null; then
@@ -65,53 +110,58 @@ dev-delete:
         docker image rm {{image}}-devcontainer:latest || true
     fi
 
-# Clean up all Docker artifacts
-clean:
-    docker rm -f {{name}} || true
-    docker image rm {{image}}:{{version}} || true
-    docker image rm {{image}}:latest || true
-    docker image rm {{image}}-devcontainer:latest || true
+# ──────────────────────────────────────────────────────────────────────────────
+# Go / Quality
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Run tests with coverage
-test:
-    mockery && go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
-
-# Run tests without mockery  
-test-only:
-    go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
-
-# Format Go code
+[group: 'go-quality']
 fmt:
     goimports -w .
     go fmt ./...
 
-# Lint Go code
+[group: 'go-quality']
 lint:
     staticcheck ./...
     go vet ./...
 
-# Update Go dependencies
+# ──────────────────────────────────────────────────────────────────────────────
+# Go / Testing
+# ──────────────────────────────────────────────────────────────────────────────
+
+[group: 'go-testing']
+test:
+    mockery && go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
+
+[group: 'go-testing']
+test-only:
+    go test -cover -bench=. -benchmem -race ./... -coverprofile=coverage.out
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Go / Dependencies
+# ──────────────────────────────────────────────────────────────────────────────
+
+[group: 'go-dependencies']
 deps:
     go get -u ./...
     go mod tidy
 
-# Download Go dependencies
+[group: 'go-dependencies']
 deps-download:
     go mod download
 
-# Build the sync binary locally
-build-binary:
-    go build -ldflags {{build_flags}} -o `go env GOPATH`/bin/sync
+# ──────────────────────────────────────────────────────────────────────────────
+# Go / Installation
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Install the sync binary
+[group: 'go-install']
 install: build-binary
     @echo "sync installed to `go env GOPATH`/bin/sync"
 
-# Run the sync binary locally (use after build-binary)
-run-local *ARGS:
-    go run -ldflags {{build_flags}} ./main.go {{ARGS}}
+# ──────────────────────────────────────────────────────────────────────────────
+# Release / Versioning
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Create and push a new git tag (usage: just tag v1.0.0)
+[group: 'release']
 tag VERSION:
     #!/usr/bin/env bash
     if [[ ! "{{VERSION}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -123,6 +173,15 @@ tag VERSION:
     git push origin {{VERSION}}
     echo "Tag {{VERSION}} created and pushed"
 
-# Show current version
-show-version:
-    @echo "Current version: {{version}}"
+# ──────────────────────────────────────────────────────────────────────────────
+# Performance
+# ──────────────────────────────────────────────────────────────────────────────
+
+[group: 'performance']
+benchmark:
+    @echo "Running performance benchmark..."
+    @echo "Note: Ensure you have a test dataset ready"
+    @echo "\n=== Original Version ==="
+    time ./sync-original || echo "Build sync-original first"
+    @echo "\n=== Optimized Version ==="
+    time ./sync-optimized || echo "Build sync-optimized first"

@@ -36,6 +36,10 @@ func DownloadUpdateWithContext(ctx context.Context, downloadURL, destDir string)
 		return "", fmt.Errorf("unexpected status code when downloading: %d", resp.StatusCode)
 	}
 
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", fmt.Errorf("error creating download directory: %w", err)
+	}
+
 	fname := determineFilename(resp.Request.URL.Path)
 	destPath := filepath.Join(destDir, fname)
 
