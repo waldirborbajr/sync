@@ -108,27 +108,35 @@ func runProcessing(cfg config.Config) (inserted, updated, ignored, batchSize int
 		}
 	}()
 
-	// MySQL optimizations
-	_, err = mysqlConn.Exec("SET unique_checks=0")
-	if err != nil {
-		log.Warn().Err(err).Msg("Could not set unique_checks=0")
-	}
-	_, err = mysqlConn.Exec("SET foreign_key_checks=0")
-	if err != nil {
-		log.Warn().Err(err).Msg("Could not set foreign_key_checks=0")
+	// MySQL optimizations (skip for SQLite in DEV_MODE)
+	if !cfg.DevMode {
+		_, err = mysqlConn.Exec("SET unique_checks=0")
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not set unique_checks=0")
+		}
+		_, err = mysqlConn.Exec("SET foreign_key_checks=0")
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not set foreign_key_checks=0")
+		}
 	}
 
-	// Get MySQL parameters for reporting
+	// Get MySQL parameters for reporting (skip for SQLite in DEV_MODE)
 	var variableName string
-	err = mysqlConn.QueryRow("SHOW VARIABLES LIKE 'max_connections'").Scan(&variableName, &maxConnections)
-	if err != nil {
-		log.Warn().Err(err).Msg("Could not read max_connections")
-		maxConnections = 200
-	}
+	if !cfg.DevMode {
+		err = mysqlConn.QueryRow("SHOW VARIABLES LIKE 'max_connections'").Scan(&variableName, &maxConnections)
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not read max_connections")
+			maxConnections = 200
+		}
 
-	err = mysqlConn.QueryRow("SHOW VARIABLES LIKE 'max_allowed_packet'").Scan(&variableName, &maxAllowedPacket)
-	if err != nil {
-		log.Warn().Err(err).Msg("Could not read max_allowed_packet")
+		err = mysqlConn.QueryRow("SHOW VARIABLES LIKE 'max_allowed_packet'").Scan(&variableName, &maxAllowedPacket)
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not read max_allowed_packet")
+			maxAllowedPacket = 4 * 1024 * 1024
+		}
+	} else {
+		// Default values for DEV_MODE (SQLite)
+		maxConnections = 1
 		maxAllowedPacket = 4 * 1024 * 1024
 	}
 
@@ -157,14 +165,16 @@ func runProcessing(cfg config.Config) (inserted, updated, ignored, batchSize int
 		return 0, 0, 0, 0, nil, 0, 0, 0, err
 	}
 
-	// Restore MySQL settings
-	_, err = mysqlConn.Exec("SET unique_checks=1")
-	if err != nil {
-		log.Warn().Err(err).Msg("Could not set unique_checks=1")
-	}
-	_, err = mysqlConn.Exec("SET foreign_key_checks=1")
-	if err != nil {
-		log.Warn().Err(err).Msg("Could not set foreign_key_checks=1")
+	// Restore MySQL settings (skip for SQLite in DEV_MODE)
+	if !cfg.DevMode {
+		_, err = mysqlConn.Exec("SET unique_checks=1")
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not set unique_checks=1")
+		}
+		_, err = mysqlConn.Exec("SET foreign_key_checks=1")
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not set foreign_key_checks=1")
+		}
 	}
 
 	elapsed = time.Since(startTime)
