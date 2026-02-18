@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"path"
 	"strings"
 	"time"
 
@@ -57,11 +58,20 @@ func DownloadUpdateWithContext(ctx context.Context, downloadURL, destDir string)
 	return destPath, nil
 }
 
-func determineFilename(path string) string {
-	segments := strings.Split(path, "/")
-	fname := segments[len(segments)-1]
-	if fname == "" {
-		fname = fmt.Sprintf("sync-%d.bin", time.Now().Unix())
+func determineFilename(p string) string {
+	// Extract the last path component from the URL path.
+	base := path.Base(p)
+
+	// Generate a safe fallback name if the base is empty or clearly invalid.
+	generated := fmt.Sprintf("sync-%d.bin", time.Now().Unix())
+	if base == "" || base == "." || base == "/" {
+		return generated
 	}
-	return fname
+
+	// Ensure the filename is a single component without directory traversal.
+	if strings.Contains(base, "/") || strings.Contains(base, "\\") || strings.Contains(base, "..") {
+		return generated
+	}
+
+	return base
 }
