@@ -1,7 +1,7 @@
 run:
   timeout: 5m
   tests: true
-  go: "1.22"
+  go: "1.25"
   allow-parallel-runners: true
 
 output:
@@ -14,12 +14,9 @@ output:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  # Mantém o output mais útil (evita barulho de coisas "opinionated" demais)
   exclude-use-default: false
 
   exclude-rules:
-    # Testes costumam ter padrões diferentes (tabelas, asserts, etc.)
     - path: _test\.go
       linters:
         - dupl
@@ -31,14 +28,14 @@ issues:
 linters:
   disable-all: true
   enable:
-    # --- Core correctness / bugs ---
+    # Core correctness / bugs
     - errcheck
     - govet
     - staticcheck
     - ineffassign
     - typecheck
 
-    # --- Code quality / maintainability ---
+    # Code quality / maintainability
     - revive
     - gosimple
     - unused
@@ -49,21 +46,21 @@ linters:
     - prealloc
     - gocritic
 
-    # --- Style (moderado, sem ser chato) ---
+    # Style (moderado)
     - misspell
     - unparam
     - whitespace
 
-    # --- Security (bom custo/benefício) ---
+    # Security
     - gosec
 
-    # --- Formatting / imports ---
+    # Formatting / imports
     - gofmt
     - goimports
 
 linters-settings:
   goimports:
-    local-prefixes: github.com/your-org/your-repo
+    local-prefixes: github.com/waldirborbajr/sync
 
   revive:
     severity: warning
@@ -110,9 +107,8 @@ linters-settings:
   gosec:
     severity: medium
     confidence: medium
-    # Ajuste conforme necessário; por padrão eu deixo enxuto.
     excludes:
-      - G104 # erros retornados por defer (muito ruído em alguns projetos)
+      - G104 # ignorar erro não checado em defer (tende a gerar ruído)
 
   gocritic:
     enabled-tags:
