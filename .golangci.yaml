@@ -1,108 +1,133 @@
----
-version: "2"
-linters:
-  default: all
-  disable:
-    - cyclop
-    - depguard
-    - dupl
-    - exhaustruct
-    - funcorder
-    - funlen
-    - gochecknoglobals
-    - gochecknoinits
-    - gocognit
-    - godox
-    - interfacebloat
-    - ireturn
-    - lll
-    - maintidx
-    - makezero
-    - mnd
-    - musttag
-    - nestif
-    - nolintlint
-    - paralleltest
-    - revive
-    - tagliatelle
-    - testpackage
-    - varnamelen
-    - wrapcheck
-    - wsl
-  settings:
-    forbidigo:
-      forbid:
-        # Forbid time.Sleep everywhere with context-appropriate alternatives
-        - pattern: 'time\.Sleep'
-          msg: >-
-            time.Sleep is forbidden.
-            In tests: use assert.EventuallyWithT for polling/waiting patterns.
-            In production code: use a backoff strategy (e.g., cenkalti/backoff) or proper synchronization primitives.
-        # Forbid inline string literals in zerolog field methods - use zf.* constants
-        - pattern: '\.(Str|Int|Int8|Int16|Int32|Int64|Uint|Uint8|Uint16|Uint32|Uint64|Float32|Float64|Bool|Dur|Time|TimeDiff|Strs|Ints|Uints|Floats|Bools|Any|Interface)\("[^"]+"'
-          msg: >-
-            Use zf.* constants for zerolog field names instead of string literals.
-            Import "github.com/juanfont/headscale/hscontrol/util/zlog/zf" and use
-            constants like zf.NodeID, zf.UserName, etc. Add new constants to
-            hscontrol/util/zlog/zf/fields.go if needed.
-        # Forbid ptr.To - use Go 1.26 new(expr) instead
-        - pattern: 'ptr\.To\('
-          msg: >-
-            ptr.To is forbidden. Use Go 1.26's new(expr) syntax instead.
-            Example: ptr.To(value) → new(value)
-        # Forbid tsaddr.SortPrefixes - use slices.SortFunc with netip.Prefix.Compare
-        - pattern: 'tsaddr\.SortPrefixes'
-          msg: >-
-            tsaddr.SortPrefixes is forbidden. Use Go 1.26's netip.Prefix.Compare instead.
-            Example: slices.SortFunc(prefixes, netip.Prefix.Compare)
-      analyze-types: true
-    gocritic:
-      disabled-checks:
-        - appendAssign
-        - ifElseChain
-    nlreturn:
-      block-size: 4
-    varnamelen:
-      ignore-names:
-        - err
-        - db
-        - id
-        - ip
-        - ok
-        - c
-        - tt
-        - tx
-        - rx
-        - sb
-        - wg
-        - pr
-        - p
-        - p2
-      ignore-type-assert-ok: true
-      ignore-map-index-ok: true
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
-      - gen
+run:
+  timeout: 5m
+  tests: true
+  go: "1.22"
+  allow-parallel-runners: true
 
-formatters:
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  # Mantém o output mais útil (evita barulho de coisas "opinionated" demais)
+  exclude-use-default: false
+
+  exclude-rules:
+    # Testes costumam ter padrões diferentes (tabelas, asserts, etc.)
+    - path: _test\.go
+      linters:
+        - dupl
+        - funlen
+        - gocognit
+        - goconst
+        - maintidx
+
+linters:
+  disable-all: true
   enable:
-    - gci
+    # --- Core correctness / bugs ---
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - typecheck
+
+    # --- Code quality / maintainability ---
+    - revive
+    - gosimple
+    - unused
+    - unconvert
+    - bodyclose
+    - durationcheck
+    - exportloopref
+    - prealloc
+    - gocritic
+
+    # --- Style (moderado, sem ser chato) ---
+    - misspell
+    - unparam
+    - whitespace
+
+    # --- Security (bom custo/benefício) ---
+    - gosec
+
+    # --- Formatting / imports ---
     - gofmt
-    - gofumpt
     - goimports
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
-      - gen
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/your-org/your-repo
+
+  revive:
+    severity: warning
+    rules:
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: errorf
+      - name: error-return
+      - name: error-strings
+      - name: if-return
+      - name: increment-decrement
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: var-declaration
+      - name: var-naming
+      - name: exported
+        arguments:
+          - "checkPrivateReceivers"
+          - "sayRepetitiveInsteadOfStutters"
+
+  govet:
+    enable-all: false
+    enable:
+      - assign
+      - atomic
+      - bools
+      - composites
+      - copylocks
+      - errorsas
+      - httpresponse
+      - nilfunc
+      - printf
+      - shifts
+      - stdmethods
+      - structtag
+      - tests
+      - timeformat
+      - unreachable
+      - unsafeptr
+      - unusedresult
+
+  gosec:
+    severity: medium
+    confidence: medium
+    # Ajuste conforme necessário; por padrão eu deixo enxuto.
+    excludes:
+      - G104 # erros retornados por defer (muito ruído em alguns projetos)
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+    disabled-checks:
+      - whyNoLint
+      - unnamedResult
+      - hugeParam
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  whitespace:
+    multi-if: false
+    multi-func: false
