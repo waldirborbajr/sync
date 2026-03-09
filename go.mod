@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/joho/godotenv v1.5.1
-	github.com/nakagami/firebirdsql v0.9.15
+	github.com/nakagami/firebirdsql v0.9.16
 	github.com/rs/zerolog v1.34.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	modernc.org/sqlite v1.34.4

@@ -28,8 +28,8 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/nakagami/chacha20 v0.1.0 h1:2fbf5KeVUw7oRpAe6/A7DqvBJLYYu0ka5WstFbnkEVo=
 github.com/nakagami/chacha20 v0.1.0/go.mod h1:xpoujepNFA7MvYLvX5xKHzlOHimDrLI9Ll8zfOJ0l2E=
-github.com/nakagami/firebirdsql v0.9.15 h1:Mf05jaFI8+kjy6sBstsAu76zOkJ44AGd6cpApWNrp/0=
-github.com/nakagami/firebirdsql v0.9.15/go.mod h1:bZKRs3rpHAjJgXAoc9YiPobTz3R22i41Zjo+llIS2B0=
+github.com/nakagami/firebirdsql v0.9.16 h1:YlyWimSzT4CUYX2L0xHZeK2pdhmeaHpPxzj/4EisQcw=
+github.com/nakagami/firebirdsql v0.9.16/go.mod h1:bZKRs3rpHAjJgXAoc9YiPobTz3R22i41Zjo+llIS2B0=
 github.com/ncruces/go-strftime v0.1.9 h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4=
 github.com/ncruces/go-strftime v0.1.9/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
