@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"runtime"
 
 	"github.com/waldirborbajr/sync/config"
 	"github.com/waldirborbajr/sync/logger"
@@ -132,6 +133,11 @@ func ProcessRows(ctx context.Context, firebirdDB, mysqlDB *sql.DB, numWorkers in
 		// Process row
 		op := processRowOptimized(existingRecords, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, cfg)
 
+		// Execute Garbage Collect each 100 records
+        if rowCount%100 == 0 {
+            runtime.GC()
+        }
+		
 		select {
 		case workChan <- op:
 			rowCount++
