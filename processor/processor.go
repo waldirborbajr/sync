@@ -134,9 +134,9 @@ func ProcessRows(ctx context.Context, firebirdDB, mysqlDB *sql.DB, numWorkers in
 		op := processRowOptimized(existingRecords, idEstoque, descricao, qtdAtual, prcCusto, prcDolar, cfg)
 
 		// Execute Garbage Collect each 100 records
-        if rowCount%100 == 0 {
-            runtime.GC()
-        }
+        // if rowCount%100 == 0 {
+        //     runtime.GC()
+        // }
 		
 		select {
 		case workChan <- op:
@@ -150,6 +150,9 @@ func ProcessRows(ctx context.Context, firebirdDB, mysqlDB *sql.DB, numWorkers in
 	// Close work channel and wait for workers
 	close(workChan)
 	wg.Wait()
+
+	// GC - by CPT
+	// runtime.GC()
 
 	if err = rows.Err(); err != nil {
 		return 0, 0, 0, 0, nil, err
